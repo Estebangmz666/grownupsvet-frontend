@@ -5,7 +5,15 @@ export const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   CONFIRMED: "Confirmada",
   REJECTED: "Rechazada",
   CANCELLED: "Cancelada",
+  NO_SHOW: "No asististe",
 };
+
+export function getStatusLabel(status: string): string {
+  return (
+    appointmentStatusLabels[status as AppointmentStatus] ??
+    "Estado no disponible"
+  );
+}
 
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es-CO", {

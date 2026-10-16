@@ -1,4 +1,5 @@
 import { StyleSheet } from "react-native";
+import type { AppointmentStatus } from "@grownupsvet/api-client";
 import {
   colors,
   radius,
@@ -119,9 +120,52 @@ export const citaStyles = StyleSheet.create({
     textAlignVertical: "top",
   },
   helperText: { fontSize: typography.caption, color: colors.textMuted },
+  secondaryButton: {
+    minHeight: touchTarget.comfortable,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  secondaryButtonLabel: {
+    fontSize: typography.bodyLarge,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  segmentedRow: { flexDirection: "row", gap: spacing.sm },
+  segmentButton: {
+    flex: 1,
+    minHeight: touchTarget.comfortable,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  segmentButtonLabel: {
+    fontSize: typography.body,
+    color: colors.text,
+    fontWeight: "500",
+  },
+  segmentButtonLabelActive: { color: colors.onAccent },
 });
 
-export const statusBadgeStyle = {
+export interface StatusBadge {
+  backgroundColor: string;
+  color: string;
+}
+
+const neutralBadge: StatusBadge = {
+  backgroundColor: colors.surfaceAlt,
+  color: colors.textSecondary,
+};
+
+export const statusBadgeStyle: Record<AppointmentStatus, StatusBadge> = {
   REQUESTED: {
     backgroundColor: colors.warningBackground,
     color: colors.warning,
@@ -130,12 +174,11 @@ export const statusBadgeStyle = {
     backgroundColor: colors.successBackground,
     color: colors.success,
   },
-  REJECTED: {
-    backgroundColor: colors.surfaceAlt,
-    color: colors.textSecondary,
-  },
-  CANCELLED: {
-    backgroundColor: colors.surfaceAlt,
-    color: colors.textSecondary,
-  },
-} as const;
+  REJECTED: neutralBadge,
+  CANCELLED: neutralBadge,
+  NO_SHOW: neutralBadge,
+};
+
+export function getStatusBadge(status: string): StatusBadge {
+  return statusBadgeStyle[status as AppointmentStatus] ?? neutralBadge;
+}

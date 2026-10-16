@@ -4,9 +4,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import { getAppointment, type Appointment } from "@grownupsvet/api-client";
 import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
 import type { CitasStackScreenProps } from "../../navigation/CitasStack";
-import { appointmentStatusLabels, formatDateTime } from "./citaLabels";
+import { formatDateTime, getStatusLabel } from "./citaLabels";
 import { toCitaErrorMessage } from "./citaErrorMessages";
-import { citaStyles as s, statusBadgeStyle } from "./citaStyles";
+import { citaStyles as s, getStatusBadge } from "./citaStyles";
 
 export function CitaDetailScreen({
   navigation,
@@ -59,7 +59,9 @@ export function CitaDetailScreen({
     return <LoadingState message="Cargando cita..." />;
   }
 
-  const badge = statusBadgeStyle[appointment.status];
+  const badge = getStatusBadge(appointment.status);
+  const isActive =
+    appointment.status === "REQUESTED" || appointment.status === "CONFIRMED";
 
   return (
     <ScrollView style={s.flex} contentContainerStyle={s.container}>
@@ -75,7 +77,7 @@ export function CitaDetailScreen({
       <Text style={s.title}>{appointment.petName}</Text>
       <View style={[s.badge, { backgroundColor: badge.backgroundColor }]}>
         <Text style={[s.badgeLabel, { color: badge.color }]}>
-          {appointmentStatusLabels[appointment.status]}
+          {getStatusLabel(appointment.status)}
         </Text>
       </View>
 
@@ -98,10 +100,12 @@ export function CitaDetailScreen({
         </View>
       </View>
 
-      <Text style={s.helperText}>
-        Si necesitas cancelar o reprogramar esta cita, comunícate directamente
-        con la clínica — desde la app todavía no es posible hacerlo.
-      </Text>
+      {isActive ? (
+        <Text style={s.helperText}>
+          Si necesitas cancelar o reprogramar esta cita, comunícate directamente
+          con la clínica — desde la app todavía no es posible hacerlo.
+        </Text>
+      ) : null}
     </ScrollView>
   );
 }

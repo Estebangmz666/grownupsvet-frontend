@@ -36,7 +36,7 @@ export interface Pet {
 }
 
 export type AppointmentStatus =
-  "REQUESTED" | "CONFIRMED" | "REJECTED" | "CANCELLED";
+  "REQUESTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "NO_SHOW";
 export type AppointmentAssignmentStatus = "ASSIGNED" | "NEEDS_REASSIGNMENT";
 
 export interface Appointment {
@@ -59,12 +59,34 @@ export interface Appointment {
   timeZone: "America/Bogota";
 }
 
+export type AppointmentEventType =
+  | "REQUESTED"
+  | "CONFIRMED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "NO_SHOW"
+  | "RESCHEDULED"
+  | "DAILY_CUTOFF"
+  | "VETERINARIAN_DISABLED"
+  | "VETERINARIAN_RESTORED"
+  | "REASSIGNED"
+  | "EMAIL_ACCESSED";
+
 export interface AppointmentEvent {
   id: string;
   appointmentId: string;
-  type: string;
+  appointmentVersion: number;
+  eventType: AppointmentEventType;
+  actorType: "HUMAN" | "SYSTEM";
+  actorId: string | null;
+  previousStatus: AppointmentStatus | null;
+  newStatus: AppointmentStatus | null;
+  previousAssignmentStatus: AppointmentAssignmentStatus | null;
+  newAssignmentStatus: AppointmentAssignmentStatus | null;
+  previousSlotId: string | null;
+  newSlotId: string | null;
+  reason: string | null;
   occurredAt: string;
-  description: string;
 }
 
 export interface AvailabilitySlot {

@@ -16,7 +16,4 @@ export type { EmptyStateProps } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
 export type { ErrorStateProps } from "./ErrorState";
 export { useReadAloud } from "./useReadAloud";
-export type {
-  UseReadAloudOptions,
-  UseReadAloudResult,
-} from "./useReadAloud";
+export type { UseReadAloudOptions, UseReadAloudResult } from "./useReadAloud";
