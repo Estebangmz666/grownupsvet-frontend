@@ -22,6 +22,16 @@ export const authStyles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.md,
   },
+  sessionNotice: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningBackground,
+  },
+  sessionNoticeText: {
+    fontSize: typography.body,
+    color: colors.text,
+    textAlign: "center",
+  },
   field: { gap: spacing.xs },
   label: { fontSize: typography.body, fontWeight: "500", color: colors.text },
   input: {

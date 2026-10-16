@@ -1,87 +1,96 @@
 # GrownupsVet frontend
 
-Mobile application for pet owners built with Expo SDK 57 and React Native. The
-administrative app is reserved for a future phase.
+Aplicación móvil para propietarios de mascotas, desarrollada con Expo SDK 57 y
+React Native. La aplicación administrativa se abordará en una fase futura.
 
-## Monorepo structure
+## Estructura del monorepo
 
 ```text
 grownupsvet-frontend/
   apps/
-    propietario/                 Owner-facing mobile app
-    administrativo/              Reserved for future development
+    propietario/                 Aplicación móvil para propietarios
+    administrativo/              Reservada para desarrollo futuro
   packages/
-    api-client/                  Typed HTTP client for the backend API
-    accessibility-kit/           Shared accessible UI and utilities
+    api-client/                  Cliente HTTP tipado para la API del backend
+    accessibility-kit/           Componentes y utilidades de accesibilidad
 ```
 
-## Owner app
+## Aplicación para propietarios
 
-The app entry point is the Expo project at the repository root. Its root
-navigation switches between authentication and the signed-in tabs based on the
-persisted session.
+El punto de entrada de la aplicación es el proyecto Expo en la raíz del
+repositorio. La navegación principal alterna entre el flujo de autenticación y
+las pestañas disponibles según la sesión almacenada.
 
-Implemented areas:
+Áreas implementadas:
 
-- **Authentication:** login, account registration, and the three-step password
-  recovery flow. Access tokens are persisted with `expo-secure-store`.
-- **Pets:** list active and archived pets, view details, create and edit pets,
-  and archive or reactivate them. Archiving preserves the pet and its history;
-  physical deletion is not supported.
-- **Appointments:** browse upcoming appointments (up to 60 days) and past
-  appointments (in 31-day increments, up to 12 chunks), view read-only details,
-  and request an appointment using an active pet and an available slot. List
-  queries use Bogotá calendar dates and honor the backend's 31-day inclusive
-  range limit, fetching all result pages. Booking requires confirmation and
-  handles slots that become unavailable. The app supports `NO_SHOW` and renders
-  unknown future statuses neutrally. Owners cannot cancel or reschedule
-  appointments from the app.
-- **Profile:** view account information, update the phone number, add/change or
-  remove a profile photo, sign out, and deactivate the account.
+- **Autenticación:** inicio de sesión, registro de cuenta y flujo de recuperación
+  de contraseña en tres pasos. Los tokens de acceso se almacenan mediante
+  `expo-secure-store`.
+- **Mascotas:** consultar mascotas activas y archivadas, ver sus detalles,
+  crearlas y editarlas, y archivarlas o reactivarlas. El archivado conserva la
+  mascota y su historial; no se admite su eliminación definitiva.
+- **Citas:** consultar citas próximas (hasta 60 días) y anteriores (en
+  incrementos de 31 días, hasta 12 tramos), ver detalles de solo lectura y
+  solicitar una cita con una mascota activa y un horario disponible entre
+  mañana y los próximos 60 días. Las
+  consultas de la lista usan fechas del calendario de Bogotá y respetan el
+  límite inclusivo de 31 días del backend; también recuperan todas las páginas
+  de resultados. La reserva requiere confirmación y contempla horarios que
+  dejan de estar disponibles. La aplicación admite el estado `NO_SHOW` y
+  muestra los estados futuros desconocidos con un estilo neutro. Los
+  propietarios no pueden cancelar ni reprogramar citas desde la aplicación.
+- **Perfil:** consultar la información de la cuenta, actualizar el número de
+  teléfono, agregar, cambiar o quitar la foto de perfil, cerrar sesión y
+  desactivar la cuenta.
 
-The Profile photo picker uses the system library picker. Images are cropped and
-compressed on-device before upload. Profile photos are fetched using the
-authenticated API client rather than an unauthenticated image URL.
+El selector de fotos del perfil usa el selector de imágenes del sistema. Las
+imágenes se recortan y comprimen en el dispositivo antes de cargarse. Las fotos
+de perfil se obtienen mediante el cliente API autenticado, no desde una URL de
+imagen sin autenticación.
 
-## Shared packages
+## Paquetes compartidos
 
 ### `packages/api-client`
 
-Contains typed API operations for authentication and password recovery, pets,
-appointments, availability slots, and owner profiles. It supports authenticated
-requests, multipart photo uploads, and raw responses for protected binary data.
-The backend contract is documented in the
-[grownupsvet-backend OpenAPI repository](https://github.com/Estebangmz666/grownupsvet-backend).
+Contiene operaciones API tipadas para autenticación y recuperación de
+contraseña, mascotas, citas, horarios disponibles y perfiles de propietarios.
+Admite solicitudes autenticadas, cargas de fotos multipart y respuestas sin
+procesar para datos binarios protegidos. El contrato del backend está
+documentado en el
+[repositorio OpenAPI de grownupsvet-backend](https://github.com/Estebangmz666/grownupsvet-backend).
 
 ### `packages/accessibility-kit`
 
-Provides shared design tokens, `ConfirmDialog`, `LoadingState`, `EmptyState`,
-and `ErrorState` components, as well as `useReadAloud()` and accessibility
-utilities.
+Proporciona tokens de diseño compartidos, los componentes `ConfirmDialog`,
+`LoadingState`, `EmptyState` y `ErrorState`, además de `useReadAloud()` y otras
+utilidades de accesibilidad.
 
-## Configure the API
+## Configurar la API
 
-By default, the app uses:
+De forma predeterminada, la aplicación usa:
 
 ```text
 http://localhost:8080/api/v1
 ```
 
-Set `EXPO_PUBLIC_API_BASE_URL` to override it. For an Android emulator, use
-`http://10.0.2.2:8080/api/v1` when the backend runs on the host machine. For a
-physical device, use the host machine's LAN address. Do not commit local
-environment files containing machine-specific settings.
+Configura `EXPO_PUBLIC_API_BASE_URL` para cambiar esta dirección. En un emulador
+de Android, usa `http://10.0.2.2:8080/api/v1` si el backend se ejecuta en la
+máquina anfitriona. En un dispositivo físico, usa la dirección LAN de esa
+máquina. Para probar contra el backend desplegado en Cloud Run, puedes usar
+`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1`. No incluyas en
+commits archivos de entorno locales con configuraciones específicas de la
+máquina.
 
-## Install and run
+## Instalar y ejecutar
 
-Install dependencies from the repository root:
+Instala las dependencias desde la raíz del repositorio:
 
 ```bash
 npm install
 npm start
 ```
 
-Platform commands:
+Comandos por plataforma:
 
 ```bash
 npm run android
@@ -89,17 +98,25 @@ npm run ios
 npm run web
 ```
 
-## Validation
+## Verificación
 
-Run the static checks and Android bundle export from the repository root:
+Ejecuta TypeScript, ESLint y las pruebas automatizadas desde la raíz del
+repositorio:
 
 ```bash
-npx tsc --noEmit
-npx eslint .
+npm run check
+```
+
+Para validar además el empaquetado de Android con Expo:
+
+```bash
 npx expo export --platform android
 ```
 
-These checks validate types, lint rules, and Expo module resolution. Testing
-login, account changes, photo upload, and appointment booking end-to-end also
-requires a reachable backend with suitable test data and a device or simulator
-for native picker behavior.
+Las pruebas cubren lógica de fechas, rangos de disponibilidad, mensajes de
+error, contraste y escala tipográfica. Estas comprobaciones no sustituyen las
+pruebas de la aplicación en un dispositivo: para verificar de principio a fin
+el inicio de sesión, los cambios de cuenta, la carga de fotos y la reserva de
+citas, también se necesita un backend accesible con datos de prueba adecuados y
+un dispositivo o simulador para comprobar el comportamiento nativo del selector
+de imágenes.

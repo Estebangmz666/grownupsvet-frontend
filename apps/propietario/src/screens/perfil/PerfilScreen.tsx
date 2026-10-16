@@ -23,7 +23,7 @@ import {
   ErrorState,
   LoadingState,
 } from "@grownupsvet/accessibility-kit";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import {
   isValidPhoneNumber,
   pickAndPrepareProfilePhoto,

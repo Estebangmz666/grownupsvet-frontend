@@ -10,18 +10,20 @@ import {
 } from "react-native";
 import { ApiError } from "@grownupsvet/api-client";
 import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import type { AuthStackScreenProps } from "../../navigation/AuthStack";
 import { authStyles as s } from "./authStyles";
 
 export function LoginScreen({ navigation }: AuthStackScreenProps<"Login">) {
-  const { login } = useAuth();
+  const { login, sessionExpiredMessage, clearSessionExpiredMessage } =
+    useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    clearSessionExpiredMessage();
     setErrorMessage(null);
     setSubmitting(true);
     try {
@@ -48,6 +50,17 @@ export function LoginScreen({ navigation }: AuthStackScreenProps<"Login">) {
       >
         <Text style={s.title}>GrownupsVet</Text>
         <Text style={s.subtitle}>Inicia sesión para continuar</Text>
+
+        {sessionExpiredMessage ? (
+          <View
+            style={s.sessionNotice}
+            accessible
+            accessibilityRole="alert"
+            accessibilityLabel={sessionExpiredMessage}
+          >
+            <Text style={s.sessionNoticeText}>{sessionExpiredMessage}</Text>
+          </View>
+        ) : null}
 
         {errorMessage ? (
           <ErrorState

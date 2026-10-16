@@ -2,7 +2,11 @@ import React, { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { getAppointment, type Appointment } from "@grownupsvet/api-client";
-import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
+import {
+  ErrorState,
+  LoadingState,
+  useReadAloud,
+} from "@grownupsvet/accessibility-kit";
 import type { CitasStackScreenProps } from "../../navigation/CitasStack";
 import { formatDateTime, getStatusLabel } from "./citaLabels";
 import { toCitaErrorMessage } from "./citaErrorMessages";
@@ -15,6 +19,7 @@ export function CitaDetailScreen({
   const { appointmentId } = route.params;
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { speak, stop, isSpeaking } = useReadAloud();
 
   const load = useCallback(async () => {
     setErrorMessage(null);
@@ -34,7 +39,8 @@ export function CitaDetailScreen({
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      return stop;
+    }, [load, stop]),
   );
 
   if (errorMessage && !appointment) {
@@ -62,6 +68,18 @@ export function CitaDetailScreen({
   const badge = getStatusBadge(appointment.status);
   const isActive =
     appointment.status === "REQUESTED" || appointment.status === "CONFIRMED";
+  const readAloudText = [
+    `Cita para ${appointment.petName}.`,
+    `Estado: ${getStatusLabel(appointment.status)}.`,
+    `Fecha y hora: ${formatDateTime(appointment.startsAt)}.`,
+    `Veterinario: ${appointment.veterinarianFullName}.`,
+    `Motivo: ${appointment.reason || "No especificado"}.`,
+    ...(isActive
+      ? [
+          "Si necesitas cancelar o reprogramar esta cita, comunícate directamente con la clínica. Desde la aplicación todavía no es posible hacerlo.",
+        ]
+      : []),
+  ].join(" ");
 
   return (
     <ScrollView style={s.flex} contentContainerStyle={s.container}>
@@ -99,6 +117,21 @@ export function CitaDetailScreen({
           </Text>
         </View>
       </View>
+
+      <Pressable
+        onPress={() => (isSpeaking ? stop() : speak(readAloudText))}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isSpeaking
+            ? "Detener lectura de la información de la cita"
+            : "Escuchar la información de la cita"
+        }
+        style={s.secondaryButton}
+      >
+        <Text style={s.secondaryButtonLabel}>
+          {isSpeaking ? "Detener lectura" : "Escuchar"}
+        </Text>
+      </Pressable>
 
       {isActive ? (
         <Text style={s.helperText}>

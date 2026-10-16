@@ -1,61 +1,74 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ApiError,
   configureApiClient,
+  getProfile as apiGetProfile,
   login as apiLogin,
   register as apiRegister,
   logout as apiLogout,
-  type AuthenticatedUser,
   type LoginInput,
   type RegisterInput,
 } from "@grownupsvet/api-client";
 import { API_BASE_URL } from "../config";
 import { clearAccessToken, getAccessToken, saveAccessToken } from "./session";
-
-type AuthStatus = "checking" | "signedOut" | "signedIn";
-
-interface AuthContextValue {
-  status: AuthStatus;
-  user: AuthenticatedUser | null;
-  initializationError: string | null;
-  retrySessionCheck: () => void;
-  login: (input: LoginInput) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-configureApiClient({
-  baseUrl: API_BASE_URL,
-  getAccessToken: async () => (await getAccessToken()) ?? undefined,
-});
+import {
+  AuthContext,
+  type AuthContextValue,
+  type AuthStatus,
+} from "./auth-context";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("checking");
-  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [user, setUser] = useState<AuthContextValue["user"]>(null);
   const [initializationError, setInitializationError] = useState<string | null>(
     null,
   );
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<
+    string | null
+  >(null);
+
+  const handleUnauthorized = useCallback(async () => {
+    let message = "Tu sesión terminó. Ingresa de nuevo.";
+    try {
+      await clearAccessToken();
+    } catch {
+      message +=
+        " No pudimos borrar la sesión guardada; si el problema continúa, reinicia la aplicación.";
+    }
+    setUser(null);
+    setStatus("signedOut");
+    setInitializationError(null);
+    setSessionExpiredMessage(message);
+  }, []);
+
+  configureApiClient({
+    baseUrl: API_BASE_URL,
+    getAccessToken: async () => (await getAccessToken()) ?? undefined,
+    onUnauthorized: handleUnauthorized,
+  });
 
   const checkSession = useCallback(async () => {
     setStatus("checking");
     setInitializationError(null);
     try {
-      // The backend has no lightweight endpoint to validate a token on launch.
-      // TODO: revisit this when a screen requires real user data (Phase 3+).
       const token = await getAccessToken();
-      setStatus(token ? "signedIn" : "signedOut");
-    } catch {
+      if (!token) {
+        setUser(null);
+        setStatus("signedOut");
+        return;
+      }
+
+      const profile = await apiGetProfile();
+      setUser(profile);
+      setStatus("signedIn");
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        return;
+      }
+      setUser(null);
       setStatus("signedOut");
       setInitializationError(
-        "No pudimos revisar tu sesión guardada. Intenta de nuevo.",
+        "No pudimos validar tu sesión guardada. Revisa tu conexión e intenta de nuevo.",
       );
     }
   }, []);
@@ -69,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await saveAccessToken(response.accessToken);
     setUser(response.user);
     setStatus("signedIn");
+    setSessionExpiredMessage(null);
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -79,32 +93,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiLogout();
     } finally {
-      await clearAccessToken();
-      setUser(null);
-      setStatus("signedOut");
+      try {
+        await clearAccessToken();
+      } finally {
+        setUser(null);
+        setStatus("signedOut");
+        setSessionExpiredMessage(null);
+      }
     }
   }, []);
+
+  const clearSessionMessage = useCallback(
+    () => setSessionExpiredMessage(null),
+    [],
+  );
 
   const value = useMemo(
     () => ({
       status,
       user,
       initializationError,
+      sessionExpiredMessage,
+      clearSessionExpiredMessage: clearSessionMessage,
       retrySessionCheck: () => void checkSession(),
       login,
       register,
       logout,
     }),
-    [status, user, initializationError, checkSession, login, register, logout],
+    [
+      status,
+      user,
+      initializationError,
+      sessionExpiredMessage,
+      clearSessionMessage,
+      checkSession,
+      login,
+      register,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth debe usarse dentro de AuthProvider");
-  }
-  return context;
 }

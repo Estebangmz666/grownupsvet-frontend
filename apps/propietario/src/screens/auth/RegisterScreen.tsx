@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { ApiError } from "@grownupsvet/api-client";
 import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
-import { useAuth } from "../../auth/AuthContext";
+import { useAuth } from "../../auth/useAuth";
 import type { AuthStackScreenProps } from "../../navigation/AuthStack";
 import { authStyles as s } from "./authStyles";
 

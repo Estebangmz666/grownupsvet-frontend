@@ -1,7 +1,7 @@
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { AuthStack } from "./AuthStack";
 import { MainTabs } from "./MainTabs";
 

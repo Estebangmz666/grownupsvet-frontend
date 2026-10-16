@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,7 +13,7 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import * as Crypto from "expo-crypto";
 import {
   ApiError,
-  listAvailabilitySlots,
+  listAvailabilitySlotsInRange,
   listPets,
   requestAppointment,
   type AvailabilitySlot,
@@ -31,7 +31,7 @@ import { formatDateHeader, formatTimeRange } from "./citaLabels";
 import { toCitaErrorMessage } from "./citaErrorMessages";
 import { citaStyles as s } from "./citaStyles";
 
-const SEARCH_WINDOW_DAYS = 30;
+const APPOINTMENT_HORIZON_DAYS = 60;
 
 function bogotaDateWithOffset(date: Date, offsetDays: number): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -64,6 +64,8 @@ export function SolicitarCitaScreen({
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
+  const clientRequestIdRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadState("loading");
@@ -82,18 +84,12 @@ export function SolicitarCitaScreen({
       }
 
       const today = new Date();
-      const [from, to] = [
-        bogotaDateWithOffset(today, 0),
-        bogotaDateWithOffset(today, SEARCH_WINDOW_DAYS),
-      ];
-      const slotsPage = await listAvailabilitySlots({
-        from,
-        to,
-        size: 50,
-      });
+      const from = bogotaDateWithOffset(today, 1);
+      const to = bogotaDateWithOffset(today, APPOINTMENT_HORIZON_DAYS);
+      const availableSlots = await listAvailabilitySlotsInRange(from, to);
 
       setSlots(
-        [...slotsPage.items].sort(
+        availableSlots.sort(
           (a, b) =>
             new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
         ),
@@ -126,13 +122,15 @@ export function SolicitarCitaScreen({
   };
 
   const handleSubmit = async () => {
-    if (!selectedPet || !selectedSlot) return;
+    if (!selectedPet || !selectedSlot || submittingRef.current) return;
+    submittingRef.current = true;
+    clientRequestIdRef.current ??= Crypto.randomUUID();
     setSubmitError(null);
     setConfirmVisible(false);
     setSubmitting(true);
     try {
       await requestAppointment({
-        clientRequestId: Crypto.randomUUID(),
+        clientRequestId: clientRequestIdRef.current,
         petId: selectedPet.id,
         availabilitySlotId: selectedSlot.id,
         expectedAvailabilitySlotVersion: selectedSlot.version,
@@ -147,9 +145,11 @@ export function SolicitarCitaScreen({
         ),
       );
       if (error instanceof ApiError && error.status === 409) {
+        clientRequestIdRef.current = null;
         void load();
       }
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -245,6 +245,7 @@ export function SolicitarCitaScreen({
           <Pressable
             key={pet.id}
             onPress={() => {
+              clientRequestIdRef.current = null;
               setSelectedPetId(pet.id);
               setSubmitError(null);
             }}
@@ -263,8 +264,8 @@ export function SolicitarCitaScreen({
         <Text style={s.sectionLabel}>¿Qué turno prefieres?</Text>
         {slots.length === 0 ? (
           <Text style={s.helperText}>
-            No hay turnos disponibles en los próximos {SEARCH_WINDOW_DAYS} días.
-            Intenta de nuevo más tarde.
+            No hay turnos disponibles entre mañana y los próximos{" "}
+            {APPOINTMENT_HORIZON_DAYS} días. Intenta de nuevo más tarde.
           </Text>
         ) : (
           slots.map((slot) => {
@@ -278,6 +279,7 @@ export function SolicitarCitaScreen({
                 ) : null}
                 <Pressable
                   onPress={() => {
+                    clientRequestIdRef.current = null;
                     setSelectedSlotId(slot.id);
                     setSubmitError(null);
                   }}
@@ -305,6 +307,7 @@ export function SolicitarCitaScreen({
         <TextInput
           value={reason}
           onChangeText={(value) => {
+            clientRequestIdRef.current = null;
             setReason(value);
             setSubmitError(null);
           }}

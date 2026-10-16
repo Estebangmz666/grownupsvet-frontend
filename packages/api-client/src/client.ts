@@ -3,6 +3,7 @@ import type { ApiErrorResponse, FieldValidationError } from "./types";
 export interface ApiClientConfig {
   baseUrl: string;
   getAccessToken?: () => string | undefined | Promise<string | undefined>;
+  onUnauthorized?: () => void | Promise<void>;
 }
 
 export class ApiError extends Error {
@@ -23,6 +24,7 @@ export class ApiError extends Error {
 }
 
 let config: ApiClientConfig | undefined;
+let unauthorizedHandling: Promise<void> | null = null;
 
 export function configureApiClient(nextConfig: ApiClientConfig): void {
   const baseUrl = nextConfig.baseUrl.trim().replace(/\/+$/, "");
@@ -83,10 +85,27 @@ async function sendRequest(path: string, init: RequestInit): Promise<Response> {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  return fetch(`${config.baseUrl}/${path.replace(/^\/+/, "")}`, {
-    ...init,
-    headers,
-  });
+  const response = await fetch(
+    `${config.baseUrl}/${path.replace(/^\/+/, "")}`,
+    {
+      ...init,
+      headers,
+    },
+  );
+
+  if (response.status === 401 && token && !path.startsWith("/auth/")) {
+    if (config.onUnauthorized) {
+      unauthorizedHandling ??= Promise.resolve()
+        .then(() => config?.onUnauthorized?.())
+        .then(() => undefined)
+        .finally(() => {
+          unauthorizedHandling = null;
+        });
+      await unauthorizedHandling;
+    }
+  }
+
+  return response;
 }
 
 async function readBody(response: Response): Promise<unknown> {
