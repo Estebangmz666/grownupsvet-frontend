@@ -2,6 +2,7 @@ import { apiRequest } from "./client";
 import type {
   Appointment,
   AppointmentEvent,
+  AppointmentNotification,
   AppointmentStatus,
   Page,
 } from "./types";
@@ -156,4 +157,48 @@ export function listAppointmentEvents(
   return apiRequest<Page<AppointmentEvent>>(
     `/appointments/${encodeURIComponent(appointmentId)}/events`,
   );
+}
+
+export interface ListAppointmentNotificationsParams {
+  page?: number;
+  size?: number;
+}
+
+/**
+ * Consulta los avisos de una cita. El propietario solo ve los avisos de su
+ * propia cita; una cita ajena responde 404. El orden es estable por creación
+ * e identificador.
+ */
+export function listAppointmentNotifications(
+  appointmentId: string,
+  params: ListAppointmentNotificationsParams = {},
+): Promise<Page<AppointmentNotification>> {
+  const query = new URLSearchParams();
+  if (params.page !== undefined) query.set("page", String(params.page));
+  if (params.size !== undefined) query.set("size", String(params.size));
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return apiRequest<Page<AppointmentNotification>>(
+    `/appointments/${encodeURIComponent(appointmentId)}/notifications${suffix}`,
+  );
+}
+
+/**
+ * Obtiene todos los avisos de una cita, recorriendo todas las páginas.
+ */
+export async function listAllAppointmentNotifications(
+  appointmentId: string,
+): Promise<AppointmentNotification[]> {
+  const notifications: AppointmentNotification[] = [];
+  let page = 0;
+  let totalPages = 1;
+  while (page < totalPages) {
+    const result = await listAppointmentNotifications(appointmentId, {
+      page,
+      size: 100,
+    });
+    notifications.push(...result.items);
+    totalPages = result.totalPages;
+    page += 1;
+  }
+  return notifications;
 }

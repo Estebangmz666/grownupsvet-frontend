@@ -133,6 +133,17 @@ export function CitaDetailScreen({
         </Text>
       </Pressable>
 
+      <Pressable
+        onPress={() =>
+          navigation.navigate("CitaNotifications", { appointmentId })
+        }
+        accessibilityRole="button"
+        accessibilityLabel="Ver los avisos de esta cita"
+        style={s.secondaryButton}
+      >
+        <Text style={s.secondaryButtonLabel}>Ver avisos de esta cita</Text>
+      </Pressable>
+
       {isActive ? (
         <Text style={s.helperText}>
           Si necesitas cancelar o reprogramar esta cita, comunícate directamente
