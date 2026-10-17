@@ -41,11 +41,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSessionExpiredMessage(message);
   }, []);
 
-  configureApiClient({
-    baseUrl: API_BASE_URL,
-    getAccessToken: async () => (await getAccessToken()) ?? undefined,
-    onUnauthorized: handleUnauthorized,
-  });
+  // Configure the client as a side effect, not during render. `handleUnauthorized`
+  // is stable, so this runs once per mount; running it in the component body
+  // would mutate a module-level singleton on every render (twice under
+  // StrictMode). It is declared before the session check so the client is ready
+  // when `checkSession` runs.
+  useEffect(() => {
+    configureApiClient({
+      baseUrl: API_BASE_URL,
+      getAccessToken: async () => (await getAccessToken()) ?? undefined,
+      onUnauthorized: handleUnauthorized,
+    });
+  }, [handleUnauthorized]);
 
   const checkSession = useCallback(async () => {
     setStatus("checking");

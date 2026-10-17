@@ -89,6 +89,42 @@ export interface AppointmentEvent {
   occurredAt: string;
 }
 
+export type NotificationType =
+  | "ADMIN_REASSIGNMENT"
+  | "OWNER_REASSIGNED"
+  | "OWNER_CONFIRMED"
+  | "OWNER_REJECTED"
+  | "OWNER_CANCELLED"
+  | "OWNER_RESCHEDULED"
+  | "OWNER_REMINDER";
+
+export type NotificationStatus =
+  "PENDING" | "SENDING" | "SENT" | "FAILED" | "SUPERSEDED";
+
+/**
+ * Estado de entrega de un aviso de cita hacia el propietario. Corresponde a
+ * `AppointmentNotificationResponseDTO` del contrato 0.9.0. El backend aclara
+ * que `SENT` acredita aceptación del servidor de correo, no lectura en buzón.
+ */
+export interface AppointmentNotification {
+  id: string;
+  appointmentId: string;
+  notificationType: NotificationType;
+  status: NotificationStatus;
+  /** Fecha prevista del aviso; no se sustituye por reintentos ni por su envío. */
+  scheduledAt: string;
+  /** Solo tiene valor cuando `status` es `PENDING`. */
+  nextAttemptAt: string | null;
+  sentAt: string | null;
+  attemptCount: number;
+  /**
+   * Código técnico del último fallo de entrega; `null` cuando no aplica. El
+   * backend lo documenta como texto libre (hasta 64 caracteres), sin catálogo
+   * cerrado, así que se muestra tal cual y no se interpreta.
+   */
+  errorCode: string | null;
+}
+
 export interface AvailabilitySlot {
   id: string;
   veterinarianId: string;
@@ -122,7 +158,3 @@ export interface ApiErrorResponse {
   errorCode: string;
   fieldErrors: FieldValidationError[];
 }
-
-// Local navigation state for the web prototype; it is not part of the API.
-export type AppView =
-  "login" | "forgot" | "create" | "pets" | "appointments" | "profile";

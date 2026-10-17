@@ -25,7 +25,7 @@ las pestañas disponibles según la sesión almacenada.
 
 - **Autenticación:** inicio de sesión, registro de cuenta y flujo de recuperación
   de contraseña en tres pasos. Los tokens de acceso se almacenan mediante
-  `expo-secure-store`.
+  `expo-secure-store` en móvil y `sessionStorage` en la vista web.
 - **Mascotas:** consultar mascotas activas y archivadas, ver sus detalles,
   crearlas y editarlas, y archivarlas o reactivarlas. El archivado conserva la
   mascota y su historial; no se admite su eliminación definitiva.
@@ -39,6 +39,13 @@ las pestañas disponibles según la sesión almacenada.
   dejan de estar disponibles. La aplicación admite el estado `NO_SHOW` y
   muestra los estados futuros desconocidos con un estilo neutro. Los
   propietarios no pueden cancelar ni reprogramar citas desde la aplicación.
+- **Avisos de una cita:** desde el detalle de una cita, consultar los avisos de
+  correo programados o enviados al propietario (confirmación, rechazo,
+  cancelación, reprogramación, reasignación y recordatorio). Cada aviso muestra
+  su estado de entrega (`PENDING`, `SENDING`, `SENT`, `FAILED`, `SUPERSEDED`)
+  con un estilo neutro para estados desconocidos, y los avisos fallidos muestran
+  el detalle técnico que reporta el backend. `SENT` significa que el
+  servidor de correo aceptó el mensaje, no que se haya leído en el buzón.
 - **Perfil:** consultar la información de la cuenta, actualizar el número de
   teléfono, agregar, cambiar o quitar la foto de perfil, cerrar sesión y
   desactivar la cuenta.
@@ -53,7 +60,8 @@ imagen sin autenticación.
 ### `packages/api-client`
 
 Contiene operaciones API tipadas para autenticación y recuperación de
-contraseña, mascotas, citas, horarios disponibles y perfiles de propietarios.
+contraseña, mascotas, citas, horarios disponibles, avisos de cita y perfiles de
+propietarios.
 Admite solicitudes autenticadas, cargas de fotos multipart y respuestas sin
 procesar para datos binarios protegidos. El contrato del backend está
 documentado en el
@@ -77,9 +85,10 @@ Configura `EXPO_PUBLIC_API_BASE_URL` para cambiar esta dirección. En un emulado
 de Android, usa `http://10.0.2.2:8080/api/v1` si el backend se ejecuta en la
 máquina anfitriona. En un dispositivo físico, usa la dirección LAN de esa
 máquina. Para probar contra el backend desplegado en Cloud Run, puedes usar
-`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1`. No incluyas en
-commits archivos de entorno locales con configuraciones específicas de la
-máquina.
+`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1`; esa dirección sirve
+para Android e iOS, pero la vista web necesita que el backend permita el origen
+del navegador (CORS). No incluyas en commits archivos de entorno locales con
+configuraciones específicas de la máquina.
 
 ## Instalar y ejecutar
 
@@ -98,6 +107,12 @@ npm run ios
 npm run web
 ```
 
+La vista web sirve para previsualizar la interfaz. En navegador, la sesión se
+guarda en `sessionStorage`: sobrevive a las recargas de la misma pestaña y se
+descarta al cerrarla (con un respaldo en memoria si el navegador bloquea el
+almacenamiento). El backend puede rechazar solicitudes web mientras no habilite
+CORS para el origen local.
+
 ## Verificación
 
 Ejecuta TypeScript, ESLint y las pruebas automatizadas desde la raíz del
@@ -114,9 +129,10 @@ npx expo export --platform android
 ```
 
 Las pruebas cubren lógica de fechas, rangos de disponibilidad, mensajes de
-error, contraste y escala tipográfica. Estas comprobaciones no sustituyen las
+error, etiquetas de avisos, contraste y escala tipográfica. Estas comprobaciones
+no sustituyen las
 pruebas de la aplicación en un dispositivo: para verificar de principio a fin
-el inicio de sesión, los cambios de cuenta, la carga de fotos y la reserva de
-citas, también se necesita un backend accesible con datos de prueba adecuados y
-un dispositivo o simulador para comprobar el comportamiento nativo del selector
-de imágenes.
+el inicio de sesión, los cambios de cuenta, la carga de fotos, la reserva de
+citas y los avisos, también se necesita un backend accesible con datos de
+prueba adecuados y un dispositivo o simulador para comprobar el comportamiento
+nativo del selector de imágenes.
