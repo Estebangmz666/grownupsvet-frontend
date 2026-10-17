@@ -75,20 +75,53 @@ utilidades de accesibilidad.
 
 ## Configurar la API
 
-De forma predeterminada, la aplicación usa:
+De forma predeterminada la configuración depende de la plataforma:
 
-```text
-http://localhost:8080/api/v1
-```
+| Plataforma | Base URL                       | Motivo                                                                                           |
+| ---------- | ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Web**    | `/api/v1` (relativa)           | Comparte origen con el gateway, así que no hay peticiones cross-origin y **no se necesita CORS** |
+| **Nativo** | `http://localhost:8080/api/v1` | No comparte origen con el backend                                                                |
 
 Configura `EXPO_PUBLIC_API_BASE_URL` para cambiar esta dirección. En un emulador
 de Android, usa `http://10.0.2.2:8080/api/v1` si el backend se ejecuta en la
 máquina anfitriona. En un dispositivo físico, usa la dirección LAN de esa
 máquina. Para probar contra el backend desplegado en Cloud Run, puedes usar
-`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1`; esa dirección sirve
-para Android e iOS, pero la vista web necesita que el backend permita el origen
-del navegador (CORS). No incluyas en commits archivos de entorno locales con
-configuraciones específicas de la máquina.
+`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1` en Android e iOS.
+
+Para desarrollo web con HMR (Metro en el 8081), apunta la variable al gateway
+en vez del backend: `EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1`
+junto con `PORT=8080 npm run web:serve`. Ver `.env.example`. No incluyas en
+commits archivos de entorno locales con configuraciones específicas de la
+máquina.
+
+## PWA instalable y conexión web al backend
+
+El backend responde `403 Invalid CORS request` a cualquier navegador cuyo
+`Origin` no esté en la lista permitida, y esa lista no se va a habilitar. La
+solución no es pelear con CORS, sino **servir la PWA y el proxy desde un mismo
+origen**: el navegador pide `/api/v1` sobre su propia URL, así que nunca envía
+`Origin` cross-site, no hay preflight y las reglas CORS del backend no se
+evalúan nunca. El backend no se modifica; solo se consulta.
+
+La exportación web incorpora un manifiesto y un service worker. La PWA se puede
+instalar y conserva el shell de la aplicación para abrirlo sin conexión. La
+precarga se limita al HTML y recursos estáticos versionados; **las rutas de API,
+respuestas privadas y tokens no se guardan para uso offline**.
+
+```bash
+npm run web:build     # exporta Expo y prepara manifest, iconos y worker en dist/
+npm run web:serve     # sirve dist/ y hace de proxy de /api/*  → http://localhost:8081
+```
+
+El gateway garantiza que `/api/*` responda `cache-control: no-store`, elimina
+toda cabecera que revele el navegador (`Origin`, `Referer`, `Sec-Fetch-*`,
+`Cookie`), reconstruye `X-Forwarded-For` con la IP real del cliente y aplica
+cabeceras de seguridad (CSP, HSTS, `nosniff`). El despliegue recomendado en
+Cloudflare Pages y las variables requeridas están documentados en
+[`proxy/README.md`](proxy/README.md). En pushes a `main`, CI publica la web si
+están definidos los secretos `CLOUDFLARE_API_TOKEN` y
+`CLOUDFLARE_ACCOUNT_ID`; sin ellos la validación sigue corriendo, pero el
+despliegue se omite.
 
 ## Instalar y ejecutar
 
@@ -104,14 +137,18 @@ Comandos por plataforma:
 ```bash
 npm run android
 npm run ios
-npm run web
+npm run web:build
+npm run web:serve
 ```
 
-La vista web sirve para previsualizar la interfaz. En navegador, la sesión se
-guarda en `sessionStorage`: sobrevive a las recargas de la misma pestaña y se
-descarta al cerrarla (con un respaldo en memoria si el navegador bloquea el
-almacenamiento). El backend puede rechazar solicitudes web mientras no habilite
-CORS para el origen local.
+Para desarrollo con HMR puedes ejecutar `npm run web` y el gateway en otro
+puerto, apuntando `EXPO_PUBLIC_API_BASE_URL` al gateway como se indicó arriba.
+Para probar la exportación y la PWA instalada, usa `web:build` seguido de
+`web:serve`. En navegador, la sesión se guarda en `sessionStorage`: sobrevive a
+las recargas de la misma pestaña y se descarta al cerrarla (con un respaldo en
+memoria si el navegador bloquea el almacenamiento). Con el gateway no hay
+bloqueos de CORS: una petición a `/api/v1` responde `401` (sin sesión) en lugar
+de `403`.
 
 ## Verificación
 

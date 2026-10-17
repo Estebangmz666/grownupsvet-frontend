@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "GrownupsVet - Propietarios",
+  "short_name": "GrownupsVet",
+  "description": "Gestiona tus mascotas y citas veterinarias.",
+  "lang": "es",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#E6F4FE",
+  "theme_color": "#0878D1",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
