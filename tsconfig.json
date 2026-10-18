@@ -1,6 +1,20 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@propietario/*": ["apps/propietario/src/*"],
+      "@administrativo/*": ["apps/administrativo/src/*"],
+      "@api-client/*": ["packages/api-client/src/*"],
+      "@accessibility-kit/*": ["packages/accessibility-kit/src/*"]
+    },
+    "ignoreDeprecations": "6.0",
     "strict": true
-  }
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "packages/**/*.tsx"
+  ]
 }

@@ -9,6 +9,7 @@ node_modules/
 
 # Build
 dist/
+coverage/
 web-build/
 expo-env.d.ts
 .wrangler/

@@ -1,0 +1,1 @@
+export { PropietarioApp } from "./PropietarioApp";
