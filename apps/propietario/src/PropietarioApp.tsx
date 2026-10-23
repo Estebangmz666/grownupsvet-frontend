@@ -1,13 +1,6 @@
-import React from "react";
-import { StatusBar } from "expo-status-bar";
-import { AuthProvider } from "./auth/AuthContext";
-import { RootNavigator } from "./navigation/RootNavigator";
+import { MainTabs } from "./navigation/MainTabs";
 
+// Authentication and NavigationContainer belong to the root application.
 export function PropietarioApp() {
-  return (
-    <AuthProvider>
-      <RootNavigator />
-      <StatusBar style="auto" />
-    </AuthProvider>
-  );
+  return <MainTabs />;
 }

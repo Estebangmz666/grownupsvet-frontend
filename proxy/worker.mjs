@@ -7,7 +7,7 @@
  *   npm run web:build
  *   cp proxy/policy.mjs dist/policy.mjs
  *   cp proxy/worker.mjs dist/_worker.js
- *   npx wrangler pages deploy dist --project-name=grownupsvet-pwa
+ *   npx wrangler pages deploy dist --project-name=grownupsvet-frontend
  *
  * Variables (Settings → Variables en Pages):
  *   UPSTREAM         origen del backend (opcional)

@@ -1,11 +1,10 @@
 # Gateway de mismo origen de la PWA
 
-El backend rechaza con `403 Invalid CORS request` cualquier petición de
-navegador cuyo `Origin` no esté en la lista permitida, y esa lista no se va a
-habilitar. En vez de pelear con CORS, este gateway sirve la PWA **y** el proxy
-de la API desde **un mismo origen**, de modo que el navegador nunca hace una
-petición cross-origin: no hay `Origin` cross-site, no hay preflight y las
-reglas CORS del backend jamás se evalúan.
+El gateway sirve la PWA **y** el proxy de la API desde **un mismo origen**.
+El navegador consulta `/api/v1` en el dominio de la aplicación y el gateway
+reenvía esas peticiones a Cloud Run. Así, la conexión del navegador con la API
+no depende de una llamada entre dominios distintos ni requiere modificar la
+configuración CORS del backend para este recorrido.
 
 ```
 navegador ──► https://app.<dominio> ──► gateway ──► backend Cloud Run
@@ -13,7 +12,8 @@ navegador ──► https://app.<dominio> ──► gateway ──► backend Cl
                     └── /index.html        └── /api/*  (sin Origin, XFF reconstruido)
 ```
 
-El backend **no se modifica**: es solo referencia.
+El backend conserva la autenticación, los permisos y las validaciones de cada
+operación. Este gateway no modifica el backend ni su infraestructura.
 
 ## Ejecutar en local
 
@@ -21,6 +21,11 @@ El backend **no se modifica**: es solo referencia.
 npm run web:build      # genera dist/ con expo export --platform web
 npm run web:serve      # http://localhost:8081
 ```
+
+Para probar el Worker y los archivos estáticos con el runtime local de Pages,
+después de compilar usa `npm run web:pages` y abre `http://localhost:8788`.
+Esta comprobación utiliza Wrangler instalado mediante el lockfile y no publica
+el proyecto ni requiere credenciales de Cloudflare.
 
 La compilación prepara `manifest.webmanifest`, los iconos, `sw.js`, su lista
 de precarga y el worker de Pages (`_worker.js`). El service worker solo guarda
@@ -52,28 +57,54 @@ el 8080 con `PORT=8080 npm run web:serve`. El CORS opt-in de desarrollo es lo
 | `PWA_CSP`         | `frame-ancestors 'none'` | CSP completo (ver Fase 3)                       |
 | `PWA_DEV_ORIGINS` | vacío                    | Lista opt-in de orígenes con CORS en desarrollo |
 
-## Desplegar en Cloudflare Pages (opción recomendada)
+## Preparar la publicación en Cloudflare Pages
+
+La configuración versionada en [`../wrangler.jsonc`](../wrangler.jsonc) define
+el proyecto `grownupsvet-frontend`, la salida `dist` y la fecha de compatibilidad
+`2026-10-21`. En la integración Git de Cloudflare Pages, comprueba estos valores:
+
+| Campo                  | Valor                    |
+| ---------------------- | ------------------------ |
+| Rama de producción     | `main`                   |
+| Directorio raíz        | Raíz de este repositorio |
+| Comando de compilación | `npm ci && npm run check && npm run web:build` |
+| Directorio de salida   | `dist`                   |
+
+El resultado debe contener `index.html`, los archivos estáticos de Expo,
+`_worker.js` y `policy.mjs`. Publicar la raíz del código fuente no equivale a
+publicar esa exportación.
+
+La vía de publicación prevista es la integración Git de Cloudflare Pages con
+el repositorio autorizado y la rama `main`. Un build correcto y una vista local
+no acreditan un despliegue público. Antes de publicar, contrasta el proyecto,
+la rama, el comando y el directorio de salida con el dashboard. Al desplegar
+con `wrangler.jsonc`, sus campos pasan a ser la fuente de configuración para
+Pages Functions.
+
+Wrangler ofrece una vía manual alternativa, únicamente desde una cuenta con
+acceso al proyecto y después de comprobar su nombre y rama. No la configures
+como un segundo automatismo junto a la integración Git:
 
 ```bash
 npm run web:build
-npx wrangler pages deploy dist --project-name=grownupsvet-pwa
+npx wrangler pages deploy --branch=main
 ```
 
-En Pages → Settings → Variables define `UPSTREAM` si cambia el backend. No
-definas `PWA_DEV_ORIGINS` en producción: con la lista vacía el worker no emite
-ninguna cabecera CORS.
+`UPSTREAM` puede definir el origen del backend si cambia. El valor por defecto
+permanece en `proxy/policy.mjs`. `PWA_DEV_ORIGINS` es una opción de desarrollo;
+con la lista vacía el worker no añade cabeceras CORS.
 
-El workflow de CI publica automáticamente los pushes a `main` cuando existen
-los secretos de GitHub `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_ACCOUNT_ID`. Crea
-antes el proyecto Pages `grownupsvet-pwa` y asigna un dominio propio HTTPS; sin
-esos secretos CI solo valida y genera el artefacto, sin desplegarlo.
-El token necesita permisos de escritura para Pages en la cuenta configurada.
+El workflow de GitHub Actions verifica tipos, lint, pruebas y build en todas
+las ramas y los pull requests. Solo adjunta la exportación si todo termina
+correctamente; no contiene un despliegue ni utiliza secretos de Cloudflare.
+La integración Git de Pages gestiona la publicación. El nombre local de
+`wrangler.jsonc` no demuestra que ya exista un proyecto remoto.
 
 ## Cabeceras que garantiza el gateway
 
 | Cabecera                    | Valor                                                | Por qué                                                                                         |
 | --------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| _(se elimina)_              | `Origin`, `Referer`, `Sec-Fetch-*`, `Cookie`, `Host` | Evita las reglas CORS del backend y no filtra cookies propias a una API Bearer                  |
+| _(se elimina)_              | `Origin`, `Referer`, `Sec-Fetch-*`, `Cookie`, `Host` | El gateway reenvía la solicitud al origen configurado sin cookies propias del frontend          |
 | `X-Forwarded-For`           | IP real del cliente (+ IP del proxy)                 | El backend usa `forward-headers-strategy: native`; se reconstruye para que nadie suplante su IP |
 | `X-Forwarded-Proto`         | `https`                                              | El backend confía en el esquema reenviado                                                       |
 | `Cache-Control`             | `no-store` (solo `/api/*`)                           | Ningún dato clínicos en cachés de navegador o intermediario                                     |
@@ -85,7 +116,9 @@ El token necesita permisos de escritura para Pages en la cuenta configurada.
 | `Permissions-Policy`        | `camera=(), microphone=(), geolocation=()`           | La app no usa esos permisos en web                                                              |
 
 Límites heredados del backend: cuerpo máximo de 6 MB y subida multi-archivo de
-5 MB por archivo. El gateway responde `413` antes de reenviar.
+5 MB por archivo. El servidor Node también comprueba los bytes recibidos; el
+worker rechaza antes de reenviar cuando `Content-Length` declara más de 6 MB.
+El backend conserva la validación definitiva del cuerpo y de cada archivo.
 
 ## Notas de seguridad
 
@@ -93,16 +126,9 @@ Límites heredados del backend: cuerpo máximo de 6 MB y subida multi-archivo de
   se registra en consola.
 - El destino del proxy es una constante, no controlada por el usuario: no hay
   SSRF.
-- **Lo que protege de verdad** no es CORS (la API usa Bearer, no cookies, así
-  que CORS no evita CSRF) sino impedir el acceso directo no confiable al
-  backend. Cloud Run no ofrece una lista arbitraria de IP permitidas como modo
-  de ingress: para permitir únicamente tráfico que pasa por Cloudflare, coloca
-  Cloud Run detrás de un HTTPS Load Balancer externo, limita el ingress del
-  servicio a `internal-and-cloud-load-balancing` y aplica una política de
-  Cloud Armor que acepte los
-  [rangos IP publicados por Cloudflare](https://www.cloudflare.com/ips/).
-  Revisa también salud, TLS y acceso de administración antes de activar la
-  restricción para no bloquear despliegues legítimos.
+- La autenticación y la autorización se verifican en el backend para cada
+  operación. El gateway y CORS no sustituyen esos controles. Esta configuración
+  conserva el backend y su infraestructura actuales.
 - La aplicación requiere que el proxy y el frontend permanezcan en el mismo
   origen. No configures el navegador para llamar directamente al dominio de
   Cloud Run.

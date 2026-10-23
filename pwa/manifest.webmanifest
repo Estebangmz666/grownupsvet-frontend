@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "GrownupsVet - Propietarios",
+  "name": "GrownupsVet",
   "short_name": "GrownupsVet",
-  "description": "Gestiona tus mascotas y citas veterinarias.",
+  "description": "Acceso de propietarios y personal a mascotas, citas y gestión de cuentas según sus permisos.",
   "lang": "es",
   "start_url": "/",
   "scope": "/",

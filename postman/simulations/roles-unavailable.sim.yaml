@@ -1,0 +1,10 @@
+simulation: grownupsvet-roles-unavailable
+routing: path
+mocks:
+  - routeKey: api
+    path: ../mocks/grownupsvet-roles/config.yaml
+    scenarios:
+      - overrides:
+          conditions:
+            error:
+              status_code: 503

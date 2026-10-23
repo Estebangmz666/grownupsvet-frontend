@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, type ApiRequestContext } from "./client";
 import type { Page, Pet, Sex, Species } from "./types";
 
 export interface ListPetsParams {
@@ -26,13 +26,14 @@ export type UpdatePetInput = Partial<
 
 export async function listPets(
   params: ListPetsParams = {},
+  requestContext?: ApiRequestContext,
 ): Promise<Page<Pet>> {
   const query = new URLSearchParams();
   if (params.active !== undefined) query.set("active", String(params.active));
   if (params.page !== undefined) query.set("page", String(params.page));
   if (params.size !== undefined) query.set("size", String(params.size));
   const suffix = query.size ? `?${query.toString()}` : "";
-  return apiRequest<Page<Pet>>(`/pets${suffix}`);
+  return apiRequest<Page<Pet>>(`/pets${suffix}`, {}, requestContext);
 }
 
 export function getPet(petId: string): Promise<Pet> {

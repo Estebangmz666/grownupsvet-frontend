@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, type ApiRequestContext } from "./client";
 import type { AuthenticatedUser } from "./types";
 
 export interface LoginInput {
@@ -21,31 +21,55 @@ export interface LoginResponse {
   user: AuthenticatedUser;
 }
 
-export function login(input: LoginInput): Promise<LoginResponse> {
-  return apiRequest<LoginResponse>("/auth/sessions", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+export function login(
+  input: LoginInput,
+  context?: ApiRequestContext,
+): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>(
+    "/auth/sessions",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    context,
+    { anonymous: true },
+  );
 }
 
 export function register(
   input: RegisterInput,
+  context?: ApiRequestContext,
 ): Promise<{ id: string; email: string }> {
-  return apiRequest("/auth/registrations", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return apiRequest(
+    "/auth/registrations",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    context,
+    { anonymous: true },
+  );
 }
 
-export function logout(): Promise<void> {
-  return apiRequest<void>("/auth/sessions/current", { method: "DELETE" });
+export function logout(context?: ApiRequestContext): Promise<void> {
+  return apiRequest<void>(
+    "/auth/sessions/current",
+    { method: "DELETE" },
+    context,
+    { allowStaleResponse: !!context },
+  );
 }
 
 export function requestPasswordRecovery(email: string): Promise<void> {
-  return apiRequest<void>("/auth/password-recoveries", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
+  return apiRequest<void>(
+    "/auth/password-recoveries",
+    {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    },
+    undefined,
+    { anonymous: true },
+  );
 }
 
 export interface VerifyPasswordRecoveryResponse {
@@ -60,6 +84,8 @@ export function verifyPasswordRecovery(
   return apiRequest<VerifyPasswordRecoveryResponse>(
     "/auth/password-recoveries/verifications",
     { method: "POST", body: JSON.stringify({ email, code }) },
+    undefined,
+    { anonymous: true },
   );
 }
 
@@ -68,8 +94,13 @@ export function resetPassword(input: {
   newPassword: string;
   confirmNewPassword: string;
 }): Promise<void> {
-  return apiRequest<void>("/auth/password-resets", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return apiRequest<void>(
+    "/auth/password-resets",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    undefined,
+    { anonymous: true },
+  );
 }

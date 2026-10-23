@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -13,11 +13,11 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import * as Crypto from "expo-crypto";
 import {
   ApiError,
+  getApiRequestContext,
+  isApiRequestContextCurrent,
   listAvailabilitySlotsInRange,
-  listPets,
   requestAppointment,
   type AvailabilitySlot,
-  type Pet,
 } from "@grownupsvet/api-client";
 import {
   ConfirmDialog,
@@ -30,6 +30,11 @@ import type { MainTabParamList } from "../../navigation/MainTabs";
 import { formatDateHeader, formatTimeRange } from "./citaLabels";
 import { toCitaErrorMessage } from "./citaErrorMessages";
 import { citaStyles as s } from "./citaStyles";
+import {
+  createAppointmentPetPager,
+  emptyAppointmentPetPage,
+} from "./appointmentPetPages";
+import { appointmentReasonError } from "./appointmentReason";
 
 const APPOINTMENT_HORIZON_DAYS = 60;
 
@@ -51,7 +56,9 @@ function bogotaDateWithOffset(date: Date, offsetDays: number): string {
 export function SolicitarCitaScreen({
   navigation,
 }: CitasStackScreenProps<"SolicitarCita">) {
-  const [pets, setPets] = useState<Pet[]>([]);
+  const [petPage, setPetPage] = useState(emptyAppointmentPetPage);
+  const petPager = useMemo(() => createAppointmentPetPager(setPetPage), []);
+  const pets = petPage.items;
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "error" | "ready">(
     "loading",
@@ -61,19 +68,29 @@ export function SolicitarCitaScreen({
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const reasonField = useRef<TextInput>(null);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const submittingRef = useRef(false);
   const clientRequestIdRef = useRef<string | null>(null);
+  const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    const requestContext = getApiRequestContext();
+    const isCurrent = () =>
+      generation === loadGeneration.current &&
+      isApiRequestContextCurrent(requestContext);
     setLoadState("loading");
     setErrorMessage(null);
     setSelectedSlotId(null);
+    setSelectedPetId(null);
+    setConfirmVisible(false);
     try {
-      const petsPage = await listPets({ active: true, size: 100 });
-      setPets(petsPage.items);
+      const petsPage = await petPager.reset(requestContext);
+      if (!petsPage || !isCurrent()) return;
 
       if (petsPage.items.length === 0) {
         setSlots([]);
@@ -86,7 +103,12 @@ export function SolicitarCitaScreen({
       const today = new Date();
       const from = bogotaDateWithOffset(today, 1);
       const to = bogotaDateWithOffset(today, APPOINTMENT_HORIZON_DAYS);
-      const availableSlots = await listAvailabilitySlotsInRange(from, to);
+      const availableSlots = await listAvailabilitySlotsInRange(
+        from,
+        to,
+        requestContext,
+      );
+      if (!isCurrent()) return;
 
       setSlots(
         availableSlots.sort(
@@ -96,6 +118,7 @@ export function SolicitarCitaScreen({
       );
       setLoadState("ready");
     } catch (error) {
+      if (!isCurrent()) return;
       setErrorMessage(
         toCitaErrorMessage(
           error,
@@ -104,12 +127,16 @@ export function SolicitarCitaScreen({
       );
       setLoadState("error");
     }
-  }, []);
+  }, [petPager]);
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      return () => {
+        loadGeneration.current += 1;
+        petPager.cancel();
+      };
+    }, [load, petPager]),
   );
 
   const selectedPet = pets.find((pet) => pet.id === selectedPetId) ?? null;
@@ -123,6 +150,13 @@ export function SolicitarCitaScreen({
 
   const handleSubmit = async () => {
     if (!selectedPet || !selectedSlot || submittingRef.current) return;
+    const validationError = appointmentReasonError(reason);
+    if (validationError) {
+      setConfirmVisible(false);
+      setReasonError(validationError);
+      reasonField.current?.focus();
+      return;
+    }
     submittingRef.current = true;
     clientRequestIdRef.current ??= Crypto.randomUUID();
     setSubmitError(null);
@@ -261,6 +295,39 @@ export function SolicitarCitaScreen({
           </Pressable>
         ))}
 
+        {petPage.error ? (
+          <ErrorState
+            message={toCitaErrorMessage(
+              petPage.error,
+              "No pudimos cargar más mascotas. Las anteriores siguen disponibles.",
+            )}
+            onRetry={() => void petPager.loadMore()}
+            retryLabel="Reintentar cargar más mascotas"
+          />
+        ) : null}
+        {petPage.hasMore && !petPage.error ? (
+          <Pressable
+            onPress={() => void petPager.loadMore()}
+            disabled={petPage.loading}
+            accessibilityRole="button"
+            accessibilityState={{
+              disabled: petPage.loading,
+              busy: petPage.loading,
+            }}
+            accessibilityLabel="Cargar más mascotas"
+            style={s.secondaryButton}
+          >
+            <Text style={s.secondaryButtonLabel}>
+              {petPage.loading
+                ? "Cargando más mascotas..."
+                : "Cargar más mascotas"}
+            </Text>
+          </Pressable>
+        ) : null}
+        <Text style={s.helperText}>
+          Mostrando {pets.length} de {petPage.totalElements} mascotas activas.
+        </Text>
+
         <Text style={s.sectionLabel}>¿Qué turno prefieres?</Text>
         {slots.length === 0 ? (
           <Text style={s.helperText}>
@@ -303,23 +370,46 @@ export function SolicitarCitaScreen({
           })
         )}
 
-        <Text style={s.sectionLabel}>Motivo (opcional)</Text>
+        <Text style={s.sectionLabel}>Motivo de la cita (obligatorio)</Text>
         <TextInput
+          ref={reasonField}
           value={reason}
           onChangeText={(value) => {
             clientRequestIdRef.current = null;
             setReason(value);
             setSubmitError(null);
+            setReasonError(null);
           }}
           placeholder="Ej. Control anual, vacunas, revisión general..."
           style={s.textArea}
           multiline
           maxLength={1000}
-          accessibilityLabel="Motivo de la cita (opcional)"
+          accessibilityLabel="Motivo de la cita (obligatorio)"
+          aria-invalid={!!reasonError}
+          aria-describedby={
+            reasonError ? "appointment-reason-error" : undefined
+          }
         />
+        <Text style={s.helperText}>
+          Escribe el motivo, hasta 1000 caracteres.
+        </Text>
+        {reasonError ? (
+          <Text
+            nativeID="appointment-reason-error"
+            accessibilityRole="alert"
+            style={s.helperText}
+          >
+            {reasonError}
+          </Text>
+        ) : null}
 
         <Pressable
-          onPress={() => setConfirmVisible(true)}
+          onPress={() => {
+            const validationError = appointmentReasonError(reason);
+            setReasonError(validationError);
+            if (validationError) reasonField.current?.focus();
+            else setConfirmVisible(true);
+          }}
           disabled={!selectedPet || !selectedSlot}
           accessibilityRole="button"
           accessibilityLabel="Confirmar solicitud de cita"

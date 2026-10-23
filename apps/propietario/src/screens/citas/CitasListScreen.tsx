@@ -1,4 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
+import { useAuthentication } from "@grownupsvet/authentication";
+import { hasUserPermission } from "@application/navigation/roleAccess";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -44,6 +46,11 @@ function byStartDesc(a: Appointment, b: Appointment): number {
 export function CitasListScreen({
   navigation,
 }: CitasStackScreenProps<"CitasList">) {
+  const { user } = useAuthentication();
+  const canRequestAppointment = hasUserPermission(
+    user,
+    "APPOINTMENT_CREATE_SELF",
+  );
   const [tab, setTab] = useState<Tab>("upcoming");
   const [upcoming, setUpcoming] = useState<TabData>(initialTabData);
   const [past, setPast] = useState<TabData>(initialTabData);
@@ -189,14 +196,16 @@ export function CitasListScreen({
     <View style={s.flex}>
       <View style={[s.container, { paddingBottom: 0 }]}>
         <Text style={s.title}>Mis citas</Text>
-        <Pressable
-          onPress={() => navigation.navigate("SolicitarCita")}
-          accessibilityRole="button"
-          accessibilityLabel="Solicitar una nueva cita"
-          style={s.primaryButton}
-        >
-          <Text style={s.primaryButtonLabel}>Solicitar cita</Text>
-        </Pressable>
+        {canRequestAppointment ? (
+          <Pressable
+            onPress={() => navigation.navigate("SolicitarCita")}
+            accessibilityRole="button"
+            accessibilityLabel="Solicitar una nueva cita"
+            style={s.primaryButton}
+          >
+            <Text style={s.primaryButtonLabel}>Solicitar cita</Text>
+          </Pressable>
+        ) : null}
 
         <View style={s.segmentedRow}>
           <Pressable
@@ -250,8 +259,12 @@ export function CitasListScreen({
             <EmptyState
               title="No tienes citas próximas"
               description="Cuando solicites una cita para tu mascota, aparecerá aquí."
-              actionLabel="Solicitar cita"
-              onAction={() => navigation.navigate("SolicitarCita")}
+              actionLabel={canRequestAppointment ? "Solicitar cita" : undefined}
+              onAction={
+                canRequestAppointment
+                  ? () => navigation.navigate("SolicitarCita")
+                  : undefined
+              }
             />
           ) : (
             <EmptyState

@@ -11,12 +11,16 @@ import type { MascotasStackScreenProps } from "../../navigation/MascotasStack";
 import { speciesLabels } from "./petLabels";
 import { toPetErrorMessage } from "./petErrorMessages";
 import { petStyles as s } from "./petStyles";
+import { useAuthentication } from "@grownupsvet/authentication";
+import { hasUserPermission } from "@application/navigation/roleAccess";
 
 type LoadState = "loading" | "error" | "ready";
 
 export function MascotasListScreen({
   navigation,
 }: MascotasStackScreenProps<"MascotasList">) {
+  const { user } = useAuthentication();
+  const canCreatePet = hasUserPermission(user, "PET_CREATE_SELF");
   const [showArchived, setShowArchived] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -86,14 +90,18 @@ export function MascotasListScreen({
           </Pressable>
         </View>
 
-        <Pressable
-          onPress={() => navigation.navigate("MascotaForm", { mode: "create" })}
-          accessibilityRole="button"
-          accessibilityLabel="Agregar una nueva mascota"
-          style={s.primaryButton}
-        >
-          <Text style={s.primaryButtonLabel}>Agregar mascota</Text>
-        </Pressable>
+        {canCreatePet ? (
+          <Pressable
+            onPress={() =>
+              navigation.navigate("MascotaForm", { mode: "create" })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Agregar una nueva mascota"
+            style={s.primaryButton}
+          >
+            <Text style={s.primaryButtonLabel}>Agregar mascota</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {loadState === "loading" ? (
@@ -115,9 +123,11 @@ export function MascotasListScreen({
               ? "Cuando archives una mascota, aparecerá aquí."
               : "Agrega tu primera mascota para empezar a solicitar citas."
           }
-          actionLabel={showArchived ? undefined : "Agregar mascota"}
+          actionLabel={
+            showArchived || !canCreatePet ? undefined : "Agregar mascota"
+          }
           onAction={
-            showArchived
+            showArchived || !canCreatePet
               ? undefined
               : () => navigation.navigate("MascotaForm", { mode: "create" })
           }

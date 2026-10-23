@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, type ApiRequestContext } from "./client";
 import {
   addDaysToIsoDate,
   MAX_APPOINTMENT_RANGE_DAYS,
@@ -17,6 +17,7 @@ export const MAX_AVAILABILITY_RANGE_DAYS = MAX_APPOINTMENT_RANGE_DAYS;
 
 export function listAvailabilitySlots(
   params: ListAvailabilitySlotsParams,
+  requestContext?: ApiRequestContext,
 ): Promise<Page<AvailabilitySlot>> {
   addDaysToIsoDate(params.from, 0);
   addDaysToIsoDate(params.to, 0);
@@ -44,12 +45,15 @@ export function listAvailabilitySlots(
   if (params.size !== undefined) query.set("size", String(params.size));
   return apiRequest<Page<AvailabilitySlot>>(
     `/availability-slots?${query.toString()}`,
+    {},
+    requestContext,
   );
 }
 
 export async function listAvailabilitySlotsInRange(
   from: string,
   to: string,
+  requestContext?: ApiRequestContext,
 ): Promise<AvailabilitySlot[]> {
   addDaysToIsoDate(from, 0);
   addDaysToIsoDate(to, 0);
@@ -83,11 +87,10 @@ export async function listAvailabilitySlotsInRange(
       let page = 0;
       let totalPages = 1;
       while (page < totalPages) {
-        const result = await listAvailabilitySlots({
-          ...chunk,
-          page,
-          size: 100,
-        });
+        const result = await listAvailabilitySlots(
+          { ...chunk, page, size: 100 },
+          requestContext,
+        );
         slots.push(...result.items);
         totalPages = result.totalPages;
         page += 1;

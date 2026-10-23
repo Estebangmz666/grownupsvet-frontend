@@ -6,12 +6,17 @@
       "@propietario/*": ["apps/propietario/src/*"],
       "@administrativo/*": ["apps/administrativo/src/*"],
       "@api-client/*": ["packages/api-client/src/*"],
-      "@accessibility-kit/*": ["packages/accessibility-kit/src/*"]
+      "@accessibility-kit/*": ["packages/accessibility-kit/src/*"],
+      "@application/*": ["src/*"]
     },
     "ignoreDeprecations": "6.0",
     "strict": true
   },
   "include": [
+    "App.tsx",
+    "index.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     "apps/**/*.ts",
     "apps/**/*.tsx",
     "packages/**/*.ts",

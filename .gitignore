@@ -39,8 +39,11 @@ yarn-error.*
 *.temp
 *.tmp
 
-# local env files
-.env*.local
+# Local configuration and credentials; only the example is versioned.
+.env
+.env.*
+!.env.example
+.dev.vars*
 
 # typescript
 *.tsbuildinfo

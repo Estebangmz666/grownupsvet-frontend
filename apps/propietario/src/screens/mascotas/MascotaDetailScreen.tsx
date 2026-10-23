@@ -17,11 +17,15 @@ import type { MascotasStackScreenProps } from "../../navigation/MascotasStack";
 import { formatDateOfBirth, sexLabels, speciesLabels } from "./petLabels";
 import { toPetErrorMessage } from "./petErrorMessages";
 import { petStyles as s } from "./petStyles";
+import { useAuthentication } from "@grownupsvet/authentication";
+import { hasUserPermission } from "@application/navigation/roleAccess";
 
 export function MascotaDetailScreen({
   navigation,
   route,
 }: MascotasStackScreenProps<"MascotaDetail">) {
+  const { user } = useAuthentication();
+  const canUpdatePet = hasUserPermission(user, "PET_UPDATE_SELF");
   const { petId } = route.params;
   const [pet, setPet] = useState<Pet | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -51,7 +55,7 @@ export function MascotaDetailScreen({
   );
 
   const handleToggleActive = async () => {
-    if (!pet) return;
+    if (!pet || !canUpdatePet) return;
     setWorking(true);
     setConfirmVisible(false);
     try {
@@ -162,46 +166,61 @@ export function MascotaDetailScreen({
         </Text>
       </Pressable>
 
-      <Pressable
-        onPress={() =>
-          navigation.navigate("MascotaForm", { mode: "edit", petId: pet.id })
-        }
-        accessibilityRole="button"
-        accessibilityLabel={`Editar ${pet.name}`}
-        style={s.primaryButton}
-      >
-        <Text style={s.primaryButtonLabel}>Editar</Text>
-      </Pressable>
+      {canUpdatePet ? (
+        <>
+          <Pressable
+            onPress={() =>
+              navigation.navigate("MascotaForm", {
+                mode: "edit",
+                petId: pet.id,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={`Editar ${pet.name}`}
+            style={s.primaryButton}
+          >
+            <Text style={s.primaryButtonLabel}>Editar</Text>
+          </Pressable>
 
-      <Pressable
-        onPress={() => setConfirmVisible(true)}
-        disabled={working}
-        accessibilityRole="button"
-        accessibilityLabel={
-          pet.active ? `Archivar ${pet.name}` : `Reactivar ${pet.name}`
-        }
-        style={pet.active ? s.dangerButton : s.secondaryButton}
-      >
-        <Text style={pet.active ? s.dangerButtonLabel : s.secondaryButtonLabel}>
-          {working ? "Un momento..." : pet.active ? "Archivar" : "Reactivar"}
-        </Text>
-      </Pressable>
+          <Pressable
+            onPress={() => setConfirmVisible(true)}
+            disabled={working}
+            accessibilityRole="button"
+            accessibilityLabel={
+              pet.active ? `Archivar ${pet.name}` : `Reactivar ${pet.name}`
+            }
+            style={pet.active ? s.dangerButton : s.secondaryButton}
+          >
+            <Text
+              style={pet.active ? s.dangerButtonLabel : s.secondaryButtonLabel}
+            >
+              {working
+                ? "Un momento..."
+                : pet.active
+                  ? "Archivar"
+                  : "Reactivar"}
+            </Text>
+          </Pressable>
 
-      <ConfirmDialog
-        visible={confirmVisible}
-        title={
-          pet.active ? "¿Archivar esta mascota?" : "¿Reactivar esta mascota?"
-        }
-        message={
-          pet.active
-            ? `${pet.name} no podrá tomar nuevas citas hasta que la reactives. Su historial se conserva y puedes reactivarla cuando quieras.`
-            : `${pet.name} volverá a estar disponible para solicitar citas.`
-        }
-        confirmLabel={pet.active ? "Archivar" : "Reactivar"}
-        destructive={pet.active}
-        onConfirm={() => void handleToggleActive()}
-        onCancel={() => setConfirmVisible(false)}
-      />
+          <ConfirmDialog
+            visible={confirmVisible}
+            title={
+              pet.active
+                ? "¿Archivar esta mascota?"
+                : "¿Reactivar esta mascota?"
+            }
+            message={
+              pet.active
+                ? `${pet.name} no podrá tomar nuevas citas hasta que la reactives. Su historial se conserva y puedes reactivarla cuando quieras.`
+                : `${pet.name} volverá a estar disponible para solicitar citas.`
+            }
+            confirmLabel={pet.active ? "Archivar" : "Reactivar"}
+            destructive={pet.active}
+            onConfirm={() => void handleToggleActive()}
+            onCancel={() => setConfirmVisible(false)}
+          />
+        </>
+      ) : null}
     </ScrollView>
   );
 }

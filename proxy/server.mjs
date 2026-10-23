@@ -26,9 +26,9 @@ import {
   parseOriginList,
   preflightHeaders,
   responseHeaders,
-  safeStaticPath,
   shouldServeIndex,
 } from "./policy.mjs";
+import { resolveStaticFilePath } from "./static-path.mjs";
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
@@ -193,7 +193,7 @@ async function proxyApi(req, res, allowOrigin) {
 }
 
 function serveStatic(req, res, pathname, allowOrigin) {
-  let filePath = safeStaticPath(STATIC_DIR, pathname);
+  const filePath = resolveStaticFilePath(STATIC_DIR, pathname);
 
   if (filePath && existsSync(filePath) && statSync(filePath).isFile()) {
     const headers = {
@@ -229,14 +229,18 @@ function serveStatic(req, res, pathname, allowOrigin) {
     return;
   }
 
-  if (shouldServeIndex(pathname)) {
-    const index = safeStaticPath(STATIC_DIR, "/index.html");
+  if (filePath && shouldServeIndex(pathname)) {
+    const index = resolveStaticFilePath(STATIC_DIR, "/index.html");
     if (index && existsSync(index)) {
       res.writeHead(200, {
         ...responseHeaders({ isApi: false, csp: CSP, allowOrigin }),
         "content-type": MIME_TYPES[".html"],
         "cache-control": "no-cache",
       });
+      if (req.method === "HEAD") {
+        res.end();
+        return;
+      }
       createReadStream(index).pipe(res);
       return;
     }
@@ -336,7 +340,7 @@ const server = createServer();
 server.on("request", handler);
 server.on("checkContinue", onRequest);
 server.listen(PORT, HOST, () => {
-  console.log(`[gateway] http://localhost:${PORT}`);
+  console.log(`[gateway] http://localhost:${server.address().port}`);
   console.log(`[gateway] estáticos: ${STATIC_DIR}`);
   console.log(`[gateway] API -> ${UPSTREAM.origin}${UPSTREAM.pathname}`);
   console.log(

@@ -1,4 +1,5 @@
 import { ApiError, type ProfilePhotoFile } from "@grownupsvet/api-client";
+import { Platform } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 
@@ -67,5 +68,17 @@ export async function pickAndPrepareProfilePhoto(): Promise<ProfilePhotoFile | n
     compress: 0.8,
   });
 
+  if (Platform.OS === "web") {
+    // ImageManipulator returns a local data/blob URI on web, not a native file.
+    // Send the processed image bytes so FormData creates a real binary part.
+    const response = await fetch(saved.uri);
+    if (!response.ok) throw new Error("No se pudo preparar la foto de perfil.");
+    return {
+      uri: saved.uri,
+      name: "profile-photo.jpg",
+      type: "image/jpeg",
+      blob: await response.blob(),
+    };
+  }
   return { uri: saved.uri, name: "profile-photo.jpg", type: "image/jpeg" };
 }

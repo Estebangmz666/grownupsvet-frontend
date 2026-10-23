@@ -1,0 +1,5 @@
+simulation: grownupsvet-roles
+routing: path
+mocks:
+  - routeKey: api
+    path: ../mocks/grownupsvet-roles/config.yaml

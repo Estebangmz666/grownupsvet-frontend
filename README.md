@@ -1,175 +1,224 @@
 # GrownupsVet frontend
 
-Aplicación móvil para propietarios de mascotas, desarrollada con Expo SDK 57 y
-React Native. La aplicación administrativa se abordará en una fase futura.
+Aplicación web adaptable a computador y celular con Expo SDK 57, React Native
+Web y TypeScript. Usa un solo runtime, un navegador raíz, un login y una sesión
+común. El rol y los permisos recibidos del backend determinan las vistas
+disponibles; la interfaz no solicita elegir un rol ni concede permisos por el
+correo. El backend autoriza cada operación.
 
-## Estructura del monorepo
+## Alcance implementado
+
+| Rol             | Área inicial    | Capacidades de la interfaz                                                                          |
+| --------------- | --------------- | --------------------------------------------------------------------------------------------------- |
+| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                         |
+| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                 |
+| `ADMINISTRATOR` | Veterinarios    | Gestión de cuentas y perfil profesional base; consulta, publicación, cambio de hora, bloqueo/republicación e historial de turnos individuales. |
+| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                    |
+
+El acceso público incluye login, registro de propietarios, recuperación de
+contraseña en tres pasos y activación de personal mediante invitación. Login,
+registro y recuperación comparten etiquetas, ayudas y errores asociados,
+mostrar/ocultar contraseña, autocompletado, foco y operación por teclado. Los
+formularios permanecen visibles mientras envían y evitan envíos repetidos.
+Registro y recuperación muestran su resultado antes de volver al login. Un
+resultado incierto de cambio de contraseña o activación bloquea otro envío
+desde esa pantalla y orienta a comprobar el acceso mediante login.
+
+En el portal del propietario se puede:
+
+- Consultar mascotas activas y archivadas, ver detalles, crear, editar,
+  archivar y reactivar. El archivado conserva la mascota y su historial.
+- Consultar citas próximas hasta 60 días y anteriores en incrementos de
+  31 días, hasta 12 tramos; recuperar sus páginas y abrir detalles de lectura.
+- Solicitar una cita con una mascota activa, motivo obligatorio y un horario
+  disponible entre mañana y los próximos 60 días. El selector permite cargar
+  más páginas de mascotas y la reserva requiere confirmación.
+- Consultar los avisos asociados a una cita y su estado de entrega. `SENT`
+  significa aceptación por el servidor de correo, no lectura en el buzón.
+- Consultar el perfil, actualizar el teléfono, agregar o quitar una foto,
+  cerrar sesión y desactivar la cuenta.
+
+El personal autorizado puede crear y editar sus cuentas permitidas, cambiar
+su estado y gestionar invitaciones con confirmaciones. Correo y rol son
+inmutables; el alta deja la cuenta pendiente de activación. La ruta pública
+`/activate-account?token=…` permite establecer su contraseña. Abrir o recargar
+el enlace no lo consume, no produce login automático y no reemplaza una sesión
+ya abierta. El token no se guarda en el almacenamiento de sesión y se retira
+de la URL al completar o abandonar ese recorrido.
+
+El administrador puede abrir **Gestionar disponibilidad** desde el detalle
+del veterinario. Consulta una agenda por día y estado, recorre sus páginas,
+publica turnos individuales de 30 minutos, cambia su hora, los bloquea o vuelve
+a publicar y consulta su historial. Cada cambio usa confirmación y la versión
+observada; edición y estado requieren motivo. Los horarios se muestran en
+America/Bogota. Un conflicto conserva la reserva y un resultado incierto exige
+consultar antes de decidir otro envío. Requiere el permiso específico de
+disponibilidad; no se concede a otros roles por herencia.
+
+## Validación y pendientes
+
+La [verificación de disponibilidad del 23/10/2026](docs/verificacion-disponibilidad-2026-10-23.md)
+registra TypeScript, ESLint, **390 pruebas en 35 archivos**, exportación web y
+recorridos locales con simulación del contrato OpenAPI 0.9.0. Incluye agenda
+individual, confirmaciones, versiones, historial, reservas protegidas y
+reconciliación tras una respuesta perdida. Distingue las pruebas del proyecto,
+las comprobaciones HTTP y los recorridos observados en navegador.
+
+La [continuidad anterior del mismo día](docs/verificacion-continuidad-frontend-2026-10-23.md)
+conserva la evidencia de recuperación, resultados inciertos, páginas
+adicionales de mascotas, validación del motivo, transporte multipart binario
+y rutas estáticas en Windows.
+
+Esa evidencia local no acredita por sí sola una publicación pública ni la
+aceptación del servicio real. Continúan pendientes:
+
+- Integración completa con cuentas reales, PostgreSQL, JWT de producción,
+  SMTP, recepción de correos e invitaciones configuradas para la URL pública.
+- Recorrido completo de selección y procesamiento de una foto en navegador
+  y su almacenamiento y lectura mediante el backend. Se comprobó el
+  transporte binario del cliente y su aislamiento entre sesiones.
+- Aceptación completa de creación de citas y concurrencia contra el servicio
+  real; pruebas de Android/iOS, instalación y uso sin conexión de la PWA.
+- Evaluación integral de accesibilidad con lector de pantalla y personas
+  usuarias. Las comprobaciones existentes no constituyen una certificación.
+
+No se incluyen generación de turnos por lotes, gestión administrativa de
+citas, cancelación o reprogramación por el propietario, atención clínica,
+títulos adicionales ni archivos de diplomas. La agenda del rol veterinario
+es de consulta.
+
+Las [vistas por rol](docs/verificacion-vistas-por-rol-2026-10-22.md), la
+[gestión administrativa](docs/verificacion-incremento-administrativo-1-2026-10-22.md)
+y el [acceso público accesible](docs/verificacion-login-signup-accesibilidad-2026-10-22.md)
+conservan la evidencia de los incrementos anteriores y sus límites.
+
+## Estructura
 
 ```text
 grownupsvet-frontend/
   apps/
-    propietario/                 Aplicación móvil para propietarios
-    administrativo/              Reservada para desarrollo futuro
+    propietario/       Mascotas, citas, avisos y perfil
+    administrativo/    Personal, disponibilidad individual y agenda por rol
+  src/
+    navigation/        Navegación raíz y entrada de activación
+    screens/auth/      Login, registro, recuperación y activación
   packages/
-    api-client/                  Cliente HTTP tipado para la API del backend
-    accessibility-kit/           Componentes y utilidades de accesibilidad
+    authentication/    Sesión común, persistencia y aislamiento
+    api-client/        Operaciones HTTP tipadas
+    accessibility-kit/ Componentes y utilidades compartidos
+  proxy/               Gateway Node local y worker de Cloudflare Pages
+  pwa/                 Manifiesto, registro y política del service worker
+  postman/             Simulación local y verificadores con datos ficticios
 ```
 
-## Aplicación para propietarios
+La sesión web usa una instantánea versionada en `sessionStorage`; en móvil
+usa `expo-secure-store`. Al recargar, la sesión se comprueba con una lectura
+permitida por rol. El vencimiento absoluto no se extiende y las respuestas
+tardías de una sesión anterior se descartan. Un error de red conserva una
+sesión pendiente de comprobar, sin mostrar datos privados; permite reintentar
+o salir. El backend sigue comprobando la firma y la autorización.
 
-El punto de entrada de la aplicación es el proyecto Expo en la raíz del
-repositorio. La navegación principal alterna entre el flujo de autenticación y
-las pestañas disponibles según la sesión almacenada.
+Las fotos protegidas se obtienen mediante el cliente autenticado. En web la
+carga utiliza un `Blob` binario en `FormData` y conserva el contexto de sesión
+capturado antes del selector. No hay renovación automática de tokens ni
+funciones privadas sin conexión.
 
-Áreas implementadas:
+## Instalar y comprobar
 
-- **Autenticación:** inicio de sesión, registro de cuenta y flujo de recuperación
-  de contraseña en tres pasos. Los tokens de acceso se almacenan mediante
-  `expo-secure-store` en móvil y `sessionStorage` en la vista web.
-- **Mascotas:** consultar mascotas activas y archivadas, ver sus detalles,
-  crearlas y editarlas, y archivarlas o reactivarlas. El archivado conserva la
-  mascota y su historial; no se admite su eliminación definitiva.
-- **Citas:** consultar citas próximas (hasta 60 días) y anteriores (en
-  incrementos de 31 días, hasta 12 tramos), ver detalles de solo lectura y
-  solicitar una cita con una mascota activa y un horario disponible entre
-  mañana y los próximos 60 días. Las
-  consultas de la lista usan fechas del calendario de Bogotá y respetan el
-  límite inclusivo de 31 días del backend; también recuperan todas las páginas
-  de resultados. La reserva requiere confirmación y contempla horarios que
-  dejan de estar disponibles. La aplicación admite el estado `NO_SHOW` y
-  muestra los estados futuros desconocidos con un estilo neutro. Los
-  propietarios no pueden cancelar ni reprogramar citas desde la aplicación.
-- **Avisos de una cita:** desde el detalle de una cita, consultar los avisos de
-  correo programados o enviados al propietario (confirmación, rechazo,
-  cancelación, reprogramación, reasignación y recordatorio). Cada aviso muestra
-  su estado de entrega (`PENDING`, `SENDING`, `SENT`, `FAILED`, `SUPERSEDED`)
-  con un estilo neutro para estados desconocidos, y los avisos fallidos muestran
-  el detalle técnico que reporta el backend. `SENT` significa que el
-  servidor de correo aceptó el mensaje, no que se haya leído en el buzón.
-- **Perfil:** consultar la información de la cuenta, actualizar el número de
-  teléfono, agregar, cambiar o quitar la foto de perfil, cerrar sesión y
-  desactivar la cuenta.
+Se necesita Node.js 22.13 o posterior de la rama 22. Instala desde la raíz con
+el lockfile versionado:
 
-El selector de fotos del perfil usa el selector de imágenes del sistema. Las
-imágenes se recortan y comprimen en el dispositivo antes de cargarse. Las fotos
-de perfil se obtienen mediante el cliente API autenticado, no desde una URL de
-imagen sin autenticación.
+```powershell
+npm ci
+npm run check
+npm run web:build
+npm run web:pages
+```
 
-## Paquetes compartidos
+La vista local de Pages queda en `http://localhost:8788`. El build exporta
+Expo y prepara `dist/` con `index.html`, recursos estáticos, manifiesto,
+service worker y el gateway `_worker.js`. Falla si faltan archivos requeridos.
 
-### `packages/api-client`
+| Script                                | Uso                                                                                                   |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `npm start` / `npm run web`           | Servidor de desarrollo Expo; `web` abre la vista web.                                                 |
+| `npm run check`                       | TypeScript, ESLint y pruebas automatizadas.                                                           |
+| `npm run build` / `npm run web:build` | Exportación web completa a `dist`.                                                                    |
+| `npm run web:pages`                   | Runtime local de Cloudflare Pages con el worker.                                                      |
+| `npm run web:serve`                   | Gateway Node alternativo para servir `dist`; puerto 8081 por defecto.                                 |
+| `npm run android` / `npm run ios`     | Desarrollo nativo; no acredita aceptación en dispositivo.                                             |
+| `npm run web:deploy`                  | Publicación manual mediante Wrangler; requiere acceso, proyecto y rama verificados. No lo ejecuta CI. |
 
-Contiene operaciones API tipadas para autenticación y recuperación de
-contraseña, mascotas, citas, horarios disponibles, avisos de cita y perfiles de
-propietarios.
-Admite solicitudes autenticadas, cargas de fotos multipart y respuestas sin
-procesar para datos binarios protegidos. El contrato del backend está
-documentado en el
-[repositorio OpenAPI de grownupsvet-backend](https://github.com/Estebangmz666/grownupsvet-backend).
-
-### `packages/accessibility-kit`
-
-Proporciona tokens de diseño compartidos, los componentes `ConfirmDialog`,
-`LoadingState`, `EmptyState` y `ErrorState`, además de `useReadAloud()` y otras
-utilidades de accesibilidad.
+La [guía de simulación](postman/README.md) explica cómo comprobar los recorridos
+con datos ficticios. Sus fixtures no pertenecen al producto, no se despliegan
+como API pública y no deben utilizarse para capturar credenciales reales.
 
 ## Configurar la API
 
-De forma predeterminada la configuración depende de la plataforma:
+En web, la base predeterminada es `/api/v1`: el navegador y el gateway
+comparten origen y el worker reenvía la petición al backend. En nativo es
+`http://localhost:8080/api/v1`; para un emulador Android con el backend en la
+máquina anfitriona, puede configurarse `http://10.0.2.2:8080/api/v1`.
 
-| Plataforma | Base URL                       | Motivo                                                                                           |
-| ---------- | ------------------------------ | ------------------------------------------------------------------------------------------------ |
-| **Web**    | `/api/v1` (relativa)           | Comparte origen con el gateway, así que no hay peticiones cross-origin y **no se necesita CORS** |
-| **Nativo** | `http://localhost:8080/api/v1` | No comparte origen con el backend                                                                |
+`EXPO_PUBLIC_API_BASE_URL` cambia la dirección durante la compilación. Las
+variables `EXPO_PUBLIC_*` quedan visibles en el bundle: nunca deben contener
+contraseñas, claves privadas ni tokens. Para la publicación web habitual,
+conserva `/api/v1` y configura el destino del gateway con `UPSTREAM` si hace
+falta; no publiques una dirección local del mock.
 
-Configura `EXPO_PUBLIC_API_BASE_URL` para cambiar esta dirección. En un emulador
-de Android, usa `http://10.0.2.2:8080/api/v1` si el backend se ejecuta en la
-máquina anfitriona. En un dispositivo físico, usa la dirección LAN de esa
-máquina. Para probar contra el backend desplegado en Cloud Run, puedes usar
-`https://grownupsvet-backend-w5glrcsyda-uc.a.run.app/api/v1` en Android e iOS.
+El backend predeterminado del gateway está en `proxy/policy.mjs`. Su contrato
+se mantiene en el [repositorio del backend](https://github.com/Estebangmz666/grownupsvet-backend).
+Los permisos y reglas de negocio se validan allí; este repositorio no cambia
+su infraestructura ni contiene sus secretos.
 
-Para desarrollo web con HMR (Metro en el 8081), apunta la variable al gateway
-en vez del backend: `EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1`
-junto con `PORT=8080 npm run web:serve`. Ver `.env.example`. No incluyas en
-commits archivos de entorno locales con configuraciones específicas de la
-máquina.
+El ejemplo de configuración está en `.env.example`. Los archivos `.env`,
+`.env.*` y `.dev.vars*` se excluyen de Git, salvo `.env.example`. También se
+excluyen `node_modules`, `dist`, `.wrangler` y los registros locales Postman.
 
-## PWA instalable y conexión web al backend
+## Publicar con Cloudflare Pages y Git
 
-El backend responde `403 Invalid CORS request` a cualquier navegador cuyo
-`Origin` no esté en la lista permitida, y esa lista no se va a habilitar. La
-solución no es pelear con CORS, sino **servir la PWA y el proxy desde un mismo
-origen**: el navegador pide `/api/v1` sobre su propia URL, así que nunca envía
-`Origin` cross-site, no hay preflight y las reglas CORS del backend no se
-evalúan nunca. El backend no se modifica; solo se consulta.
+La vía de publicación prevista es la integración Git de **Cloudflare Pages**
+con el repositorio propio. La rama de producción es **`main`**:
 
-La exportación web incorpora un manifiesto y un service worker. La PWA se puede
-instalar y conserva el shell de la aplicación para abrirlo sin conexión. La
-precarga se limita al HTML y recursos estáticos versionados; **las rutas de API,
-respuestas privadas y tokens no se guardan para uso offline**.
+| Campo de Pages            | Configuración                                                       |
+| ------------------------- | ------------------------------------------------------------------- |
+| Repositorio               | El repositorio autorizado que conserva este trabajo y su historial. |
+| Rama de producción        | `main`                                                              |
+| Directorio raíz           | Raíz del repositorio.                                               |
+| Comando de compilación    | `npm ci && npm run check && npm run web:build`                      |
+| Directorio de salida      | `dist`                                                              |
+| `NODE_VERSION`            | `22.18.0`                                                           |
+| `SKIP_DEPENDENCY_INSTALL` | `1`, ya que el comando anterior instala desde el lockfile.          |
 
-```bash
-npm run web:build     # exporta Expo y prepara manifest, iconos y worker en dist/
-npm run web:serve     # sirve dist/ y hace de proxy de /api/*  → http://localhost:8081
-```
+Comprueba que el proyecto elegido coincida con `wrangler.jsonc`; su nombre
+local no acredita que exista un proyecto remoto. Conserva la base web
+`/api/v1`, comprueba el `UPSTREAM` real y deja `PWA_DEV_ORIGINS` vacío en
+producción. La guía técnica del gateway está en [proxy/README.md](proxy/README.md).
 
-El gateway garantiza que `/api/*` responda `cache-control: no-store`, elimina
-toda cabecera que revele el navegador (`Origin`, `Referer`, `Sec-Fetch-*`,
-`Cookie`), reconstruye `X-Forwarded-For` con la IP real del cliente y aplica
-cabeceras de seguridad (CSP, HSTS, `nosniff`). El despliegue recomendado en
-Cloudflare Pages y las variables requeridas están documentados en
-[`proxy/README.md`](proxy/README.md). En pushes a `main`, CI publica la web si
-están definidos los secretos `CLOUDFLARE_API_TOKEN` y
-`CLOUDFLARE_ACCOUNT_ID`; sin ellos la validación sigue corriendo, pero el
-despliegue se omite.
+GitHub Actions ejecuta las comprobaciones y el build en pushes a todas las
+ramas y en pull requests. Solo adjunta `dist` si el trabajo termina
+correctamente. **No usa credenciales de Cloudflare ni despliega**; Pages
+gestiona la publicación mediante su integración Git. Evita habilitar otra vía
+automática que publique el mismo cambio dos veces.
 
-## Instalar y ejecutar
+Pages ejecuta sus propias comprobaciones antes de publicar: su integración Git
+no espera el resultado de GitHub Actions. Si falla una prueba o la exportación,
+ese despliegue no reemplaza la versión publicada.
 
-Instala las dependencias desde la raíz del repositorio:
+Publicar la exportación sin su worker no proporciona el gateway de API. Tras
+publicar, comprueba HTTPS, carga de recursos, cabeceras de `/api/v1` y la ruta
+`/activate-account`. La aceptación de login e invitaciones con cuentas reales
+requiere su propia comprobación. Este README no presupone un dominio público
+ni un despliegue exitoso.
 
-```bash
-npm install
-npm start
-```
+El service worker conserva únicamente el shell y recursos estáticos
+admitidos del mismo origen. Excluye rutas API y peticiones de recursos con
+query, autorización o cookies; no almacena respuestas privadas ni tokens de
+activación para uso offline. El gateway responde `Cache-Control: no-store`
+para la API y añade cabeceras de seguridad.
 
-Comandos por plataforma:
+## Historial y licencia
 
-```bash
-npm run android
-npm run ios
-npm run web:build
-npm run web:serve
-```
-
-Para desarrollo con HMR puedes ejecutar `npm run web` y el gateway en otro
-puerto, apuntando `EXPO_PUBLIC_API_BASE_URL` al gateway como se indicó arriba.
-Para probar la exportación y la PWA instalada, usa `web:build` seguido de
-`web:serve`. En navegador, la sesión se guarda en `sessionStorage`: sobrevive a
-las recargas de la misma pestaña y se descarta al cerrarla (con un respaldo en
-memoria si el navegador bloquea el almacenamiento). Con el gateway no hay
-bloqueos de CORS: una petición a `/api/v1` responde `401` (sin sesión) en lugar
-de `403`.
-
-## Verificación
-
-Ejecuta TypeScript, ESLint y las pruebas automatizadas desde la raíz del
-repositorio:
-
-```bash
-npm run check
-```
-
-Para validar además el empaquetado de Android con Expo:
-
-```bash
-npx expo export --platform android
-```
-
-Las pruebas cubren lógica de fechas, rangos de disponibilidad, mensajes de
-error, etiquetas de avisos, contraste y escala tipográfica. Estas comprobaciones
-no sustituyen las
-pruebas de la aplicación en un dispositivo: para verificar de principio a fin
-el inicio de sesión, los cambios de cuenta, la carga de fotos, la reserva de
-citas y los avisos, también se necesita un backend accesible con datos de
-prueba adecuados y un dispositivo o simulador para comprobar el comportamiento
-nativo del selector de imágenes.
+La copia en otra cuenta debe conservar el historial y la autoría de las
+contribuciones del equipo. La licencia incluida permanece en [LICENSE](LICENSE).
+Cambiar el remoto o el alojamiento no sustituye esas atribuciones.

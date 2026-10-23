@@ -17,10 +17,14 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build": "npm run web:build",
     "web:build": "expo export --platform web --output-dir dist && node scripts/prepare-web-build.mjs",
-    "web:serve": "node proxy/server.mjs"
+    "web:serve": "node proxy/server.mjs",
+    "web:pages": "wrangler pages dev dist --port 8788",
+    "web:deploy": "npm run web:build && wrangler pages deploy dist"
   },
   "dependencies": {
+    "@grownupsvet/authentication": "*",
     "@grownupsvet/propietario": "*",
     "@react-navigation/bottom-tabs": "^7.20.0",
     "@react-navigation/native": "^7.3.18",
@@ -53,7 +57,8 @@
     "prettier": "^3.7.3",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.56.1",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "4.151.3"
   },
   "private": true,
   "overrides": {

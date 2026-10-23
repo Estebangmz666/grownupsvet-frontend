@@ -5,3 +5,7 @@ export * from "./pets.api";
 export * from "./appointments.api";
 export * from "./availability.api";
 export * from "./profile.api";
+export * from "./staff.api";
+export * from "./staff.types";
+export * from "./veterinarianAvailability.api";
+export * from "./veterinarianAvailability.types";

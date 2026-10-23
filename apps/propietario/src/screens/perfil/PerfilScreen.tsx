@@ -14,6 +14,8 @@ import {
   deleteProfilePhoto,
   fetchProfilePhotoDataUri,
   getProfile,
+  getApiRequestContext,
+  isApiRequestContextCurrent,
   updatePhoneNumber,
   uploadProfilePhoto,
   type UserProfile,
@@ -30,11 +32,19 @@ import {
   toProfileErrorMessage,
 } from "./perfilHelpers";
 import { perfilStyles as s } from "./perfilStyles";
+import { hasUserPermission } from "@application/navigation/roleAccess";
 
 type PendingAction = "removePhoto" | "deactivate" | null;
 
 export function PerfilScreen() {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const canReadPhoto = hasUserPermission(user, "PROFILE_PHOTO_READ_SELF");
+  const canUpdatePhoto = hasUserPermission(user, "PROFILE_PHOTO_UPDATE_SELF");
+  const canUpdateProfile = hasUserPermission(user, "PROFILE_UPDATE_SELF");
+  const canDeactivateProfile = hasUserPermission(
+    user,
+    "PROFILE_DEACTIVATE_SELF",
+  );
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -53,15 +63,16 @@ export function PerfilScreen() {
   const [accountError, setAccountError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const requestContext = getApiRequestContext();
     setLoadError(null);
     setProfile(null);
     setPhotoError(null);
     try {
-      const loaded = await getProfile();
+      const loaded = await getProfile(requestContext);
       setProfile(loaded);
-      if (loaded.profilePhotoUrl) {
+      if (loaded.profilePhotoUrl && canReadPhoto) {
         try {
-          setPhotoUri(await fetchProfilePhotoDataUri());
+          setPhotoUri(await fetchProfilePhotoDataUri(requestContext));
         } catch (error) {
           setPhotoUri(null);
           setPhotoError(
@@ -82,19 +93,21 @@ export function PerfilScreen() {
         ),
       );
     }
-  }, []);
+  }, [canReadPhoto]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const handleChangePhoto = async () => {
+    if (!canUpdatePhoto) return;
+    const requestContext = getApiRequestContext();
     setPhotoError(null);
     setPhotoBusy(true);
     try {
       const file = await pickAndPrepareProfilePhoto();
-      if (!file) return;
-      await uploadProfilePhoto(file);
+      if (!file || !isApiRequestContextCurrent(requestContext)) return;
+      await uploadProfilePhoto(file, requestContext);
       setProfile((current) =>
         current
           ? {
@@ -103,8 +116,12 @@ export function PerfilScreen() {
             }
           : current,
       );
+      if (!canReadPhoto) {
+        setPhotoUri(null);
+        return;
+      }
       try {
-        const updatedPhoto = await fetchProfilePhotoDataUri();
+        const updatedPhoto = await fetchProfilePhotoDataUri(requestContext);
         setPhotoUri(updatedPhoto);
       } catch (error) {
         setPhotoUri(null);
@@ -128,11 +145,13 @@ export function PerfilScreen() {
   };
 
   const handleRemovePhoto = async () => {
+    if (!canUpdatePhoto) return;
+    const requestContext = getApiRequestContext();
     setPendingAction(null);
     setPhotoError(null);
     setPhotoBusy(true);
     try {
-      await deleteProfilePhoto();
+      await deleteProfilePhoto(requestContext);
       setPhotoUri(null);
       setProfile((current) =>
         current ? { ...current, profilePhotoUrl: null } : current,
@@ -157,6 +176,8 @@ export function PerfilScreen() {
   };
 
   const handleSavePhone = async () => {
+    if (!canUpdateProfile) return;
+    const requestContext = getApiRequestContext();
     const candidate = phoneDraft.trim();
     if (!isValidPhoneNumber(candidate)) {
       setPhoneError(
@@ -167,7 +188,7 @@ export function PerfilScreen() {
     setPhoneError(null);
     setSavingPhone(true);
     try {
-      setProfile(await updatePhoneNumber(candidate));
+      setProfile(await updatePhoneNumber(candidate, requestContext));
       setEditingPhone(false);
     } catch (error) {
       setPhoneError(
@@ -190,11 +211,13 @@ export function PerfilScreen() {
   };
 
   const handleDeactivate = async () => {
+    if (!canDeactivateProfile) return;
+    const requestContext = getApiRequestContext();
     setPendingAction(null);
     setAccountError(null);
     setAccountBusy(true);
     try {
-      await deactivateAccount();
+      await deactivateAccount(requestContext);
     } catch (error) {
       setAccountError(
         toProfileErrorMessage(
@@ -207,9 +230,9 @@ export function PerfilScreen() {
     }
 
     try {
-      await logout();
+      if (isApiRequestContextCurrent(requestContext)) await logout();
     } catch {
-      // The account is deactivated; logout still clears the local session.
+      // A later user's session must never be closed by this continuation.
     }
   };
 
@@ -258,7 +281,7 @@ export function PerfilScreen() {
 
         {photoBusy ? (
           <LoadingState message="Procesando la foto..." />
-        ) : (
+        ) : canUpdatePhoto ? (
           <>
             <Pressable
               onPress={() => void handleChangePhoto()}
@@ -285,7 +308,7 @@ export function PerfilScreen() {
               </Pressable>
             ) : null}
           </>
-        )}
+        ) : null}
         {photoError ? (
           <Text style={s.errorText} accessibilityRole="alert">
             {photoError}
@@ -371,14 +394,16 @@ export function PerfilScreen() {
                 <Text style={s.detailValue}>{profile.phoneNumber}</Text>
               </View>
             </View>
-            <Pressable
-              onPress={startEditingPhone}
-              accessibilityRole="button"
-              accessibilityLabel="Cambiar mi teléfono"
-              style={s.secondaryButton}
-            >
-              <Text style={s.secondaryButtonLabel}>Cambiar teléfono</Text>
-            </Pressable>
+            {canUpdateProfile ? (
+              <Pressable
+                onPress={startEditingPhone}
+                accessibilityRole="button"
+                accessibilityLabel="Cambiar mi teléfono"
+                style={s.secondaryButton}
+              >
+                <Text style={s.secondaryButtonLabel}>Cambiar teléfono</Text>
+              </Pressable>
+            ) : null}
           </>
         )}
 
@@ -391,14 +416,16 @@ export function PerfilScreen() {
         >
           <Text style={s.primaryButtonLabel}>Cerrar sesión</Text>
         </Pressable>
-        <Pressable
-          onPress={() => setPendingAction("deactivate")}
-          accessibilityRole="button"
-          accessibilityLabel="Desactivar mi cuenta"
-          style={s.dangerButton}
-        >
-          <Text style={s.dangerButtonLabel}>Desactivar mi cuenta</Text>
-        </Pressable>
+        {canDeactivateProfile ? (
+          <Pressable
+            onPress={() => setPendingAction("deactivate")}
+            accessibilityRole="button"
+            accessibilityLabel="Desactivar mi cuenta"
+            style={s.dangerButton}
+          >
+            <Text style={s.dangerButtonLabel}>Desactivar mi cuenta</Text>
+          </Pressable>
+        ) : null}
         {accountError ? (
           <Text style={s.errorText} accessibilityRole="alert">
             {accountError}
