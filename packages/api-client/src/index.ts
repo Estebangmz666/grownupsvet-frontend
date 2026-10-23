@@ -12,3 +12,5 @@ export * from "./veterinarianAvailability.types";
 export * from "./veterinarianAvailabilityBatch.api";
 export * from "./veterinarianAvailabilityBatch.model";
 export * from "./veterinarianAvailabilityBatch.types";
+export * from "./administrativeAppointments.api";
+export * from "./administrativeAppointments.types";

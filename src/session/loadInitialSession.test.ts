@@ -20,6 +20,7 @@ const requestContext: ApiRequestContext = {
 let server: Server;
 let paths: string[];
 let profileId: string;
+let appointmentsStatus: number;
 
 function snapshot(
   role: UserRole,
@@ -45,6 +46,20 @@ describe("restoring the permitted role destination over HTTP", () => {
       const url = new URL(request.url!, "http://localhost");
       paths.push(request.url!);
       response.setHeader("Content-Type", "application/json");
+      if (
+        url.pathname === "/api/v1/appointments" &&
+        appointmentsStatus !== 200
+      ) {
+        response.statusCode = appointmentsStatus;
+        response.end(
+          JSON.stringify({
+            status: appointmentsStatus,
+            errorCode: "ACCESS_DENIED",
+            fieldErrors: [],
+          }),
+        );
+        return;
+      }
       if (url.pathname === "/api/v1/users/me") {
         response.end(
           JSON.stringify({
@@ -93,6 +108,7 @@ describe("restoring the permitted role destination over HTTP", () => {
   beforeEach(() => {
     paths = [];
     profileId = userId;
+    appointmentsStatus = 200;
   });
   afterAll(async () => {
     await new Promise<void>((resolve, reject) =>
@@ -143,6 +159,35 @@ describe("restoring the permitted role destination over HTTP", () => {
       ),
     ).rejects.toMatchObject({ status: 403 });
     expect(paths).toEqual([]);
+  });
+
+  it("verifies a read-only administrator through its authorized appointment query", async () => {
+    await expect(
+      loadInitialSession(
+        snapshot("ADMINISTRATOR", ["APPOINTMENT_READ_ALL"]),
+        requestContext,
+      ),
+    ).resolves.toMatchObject({ role: "ADMINISTRATOR" });
+    expect(paths).toHaveLength(1);
+    const url = new URL(paths[0], "http://localhost");
+    expect(url.pathname).toBe("/api/v1/appointments");
+    expect(url.searchParams.get("from")).toBe(url.searchParams.get("to"));
+    expect(url.searchParams.get("page")).toBe("0");
+    expect(url.searchParams.get("size")).toBe("20");
+  });
+
+  it("does not restore a read-only administrator when the server rejects its access", async () => {
+    appointmentsStatus = 403;
+    await expect(
+      loadInitialSession(
+        snapshot("ADMINISTRATOR", ["APPOINTMENT_READ_ALL"]),
+        requestContext,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(paths).toHaveLength(1);
+    expect(new URL(paths[0], "http://localhost").pathname).toBe(
+      "/api/v1/appointments",
+    );
   });
 
   it("rejects a profile belonging to a different account", async () => {

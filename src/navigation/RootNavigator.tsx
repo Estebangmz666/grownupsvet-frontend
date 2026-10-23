@@ -47,7 +47,7 @@ export function RootNavigator() {
   const areaTitles = {
     owner: "Portal del propietario",
     administrators: "Administradores",
-    veterinarians: "Veterinarios",
+    veterinarians: "Administración",
     assignedAppointments: "Mi agenda",
   };
   let content;

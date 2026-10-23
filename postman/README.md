@@ -30,6 +30,8 @@ El alcance modelado es:
   fecha de Bogotá calculada durante la consulta.
 - Disponibilidad administrativa: turnos individuales, cambios de hora/estado,
   historial y generación de lotes completos con rechazo de colisiones.
+- Citas administrativas: agenda global paginada, detalle e historial,
+  confirmación o rechazo de solicitudes con versión observada y replay limitado.
 
 Las operaciones restantes devuelven **501 SIMULATION_ENDPOINT_NOT_MODELED**.
 No se simulan creación o edición de mascotas, fotos,
@@ -84,6 +86,56 @@ Los JWT son ficticios: contienen claims coherentes de identidad, rol, permisos
 y expiración, pero su firma no es válida para el backend. La simulación
 comprueba sesiones emitidas por ella y su revocación mediante `pm.state`; no
 acredita criptografía, SMTP, base de datos ni seguridad del servidor real.
+
+## Revisión administrativa de citas
+
+El entorno conserva las dos citas del día y añade 25 citas para mañana,
+permitiendo recorrer dos páginas de 20. Los estados de cita y de asignación
+se muestran de forma independiente. Solo el administrador con permisos de
+lectura global y gestión puede decidir sobre las solicitudes. Otros roles
+conservan su ámbito propio o asignado; el superadministrador no hereda acceso.
+
+`GET /appointments/{id}` y `GET /appointments/{id}/events?page=0&size=20`
+devuelven el contrato completo sin correo del propietario. El cambio usa
+`PATCH /appointments/{id}/status` con `status`, `expectedVersion` y `reason`
+opcional al confirmar, obligatorio al rechazar. Los únicos cambios modelados
+en este incremento son `CONFIRMED` y `REJECTED`; cancelación, inasistencia,
+reprogramación, reasignación y creación de citas siguen sin modelarse.
+
+Solo en la simulación, la fixture `appointment-state` permite seleccionar una
+cita mediante `appointmentId` e inyectar `advanceVersion`, `cutoffPassed` o
+`participantInactive`. `next-mutation` puede cortar, demorar o alterar la
+respuesta después de aplicar una decisión. Estas rutas de control no existen
+en el producto y no se incluyen en el bundle web.
+
+El corte del sustituto usa las 06:00 de Bogotá de la fecha de la cita y puede
+alterarse mediante la fixture. No demuestra la configuración, persistencia
+ni ejecución del scheduler real. El frontend no recibe ni calcula ese corte.
+Los identificadores de turno del historial ficticio no enlazan con los turnos
+de disponibilidad del sustituto: estas pruebas no acreditan liberación de
+capacidad, transacciones, bloqueos, carreras SQL ni avisos de correo.
+
+La cuenta `read-only-administrator@roles.test` es una fixture de permisos con
+solo `APPOINTMENT_READ_ALL`. Permite comprobar navegación de consulta y
+restauración mediante una petición autorizada; no representa una política de
+asignación de permisos o una cuenta existente en el backend real.
+
+Desde PowerShell, con la simulación iniciada y sin un navegador usando sus
+datos, ejecutar:
+
+```powershell
+python postman/scripts/verify_administrative_appointments_http.py `
+  --spec '..\GrownupsVet\grownupsvet-backend\docs\openapi\openapi.json'
+node postman/scripts/verify_administrative_appointments_client_http.mjs
+```
+
+Ambos verificadores se limitan al puerto local 4900 y reinician datos ficticios.
+El primero contrasta respuestas con los esquemas. El segundo compila el cliente
+TypeScript real y comprueba paginación, versiones, historial, motivo, corte y
+respuestas perdidas/vacías/malformadas/408 después de escribir, sin sustituir
+`fetch` ni reenviar automáticamente una decisión. Los informes saneados se
+guardan en `postman/.runtime/administrative-appointments-http.json` y
+`postman/.runtime/administrative-appointments-client-http.json`.
 
 ## Iniciar y detener en Windows
 

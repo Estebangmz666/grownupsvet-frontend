@@ -28,7 +28,8 @@ export function resolveApplicationArea(
         ? "administrators"
         : null;
     case "ADMINISTRATOR":
-      return hasUserPermission(user, "VETERINARIAN_MANAGE")
+      return hasUserPermission(user, "VETERINARIAN_MANAGE") ||
+        hasUserPermission(user, "APPOINTMENT_READ_ALL")
         ? "veterinarians"
         : null;
     case "VETERINARIAN":

@@ -10,6 +10,7 @@ describe("role-specific application entry", () => {
     ["OWNER", "PET_READ_SELF", "owner"],
     ["SUPER_ADMIN", "ADMINISTRATOR_MANAGE", "administrators"],
     ["ADMINISTRATOR", "VETERINARIAN_MANAGE", "veterinarians"],
+    ["ADMINISTRATOR", "APPOINTMENT_READ_ALL", "veterinarians"],
     ["VETERINARIAN", "APPOINTMENT_READ_ASSIGNED", "assignedAppointments"],
   ] as const)(
     "routes %s only with its actual permission",
@@ -22,6 +23,9 @@ describe("role-specific application entry", () => {
     },
   );
   it("does not grant owner screens or inherit another role's area", () => {
+    expect(
+      resolveApplicationArea(user("ADMINISTRATOR", ["APPOINTMENT_MANAGE"])),
+    ).toBeNull();
     expect(
       resolveApplicationArea(
         user("SUPER_ADMIN", ["PET_READ_SELF", "VETERINARIAN_MANAGE"]),

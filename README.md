@@ -3,9 +3,10 @@
 Sitio publicado: [grownupsvet-frontend.pages.dev](https://grownupsvet-frontend.pages.dev).
 La [verificación de publicación](docs/publicacion-cloudflare-2026-10-23.md)
 identifica el commit, el despliegue y los límites de las comprobaciones reales.
-El incremento de [disponibilidad por lotes](docs/verificacion-lotes-disponibilidad-2026-10-23.md)
-está implementado y verificado localmente; su publicación sigue pendiente.
-El informe enlazado de publicación conserva el alcance del despliegue anterior.
+La disponibilidad por lotes se publicó en el commit `b7b735a`; su
+[verificación funcional](docs/verificacion-lotes-disponibilidad-2026-10-23.md)
+conserva el corte local previo a esa publicación. Cada incremento documenta
+por separado su implementación, pruebas y aceptación con el servicio real.
 
 Aplicación web adaptable a computador y celular con Expo SDK 57, React Native
 Web y TypeScript. Usa un solo runtime, un navegador raíz, un login y una sesión
@@ -15,12 +16,12 @@ correo. El backend autoriza cada operación.
 
 ## Alcance implementado
 
-| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                   |
-| --------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                                  |
-| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                          |
-| `ADMINISTRATOR` | Veterinarios    | Gestión de cuentas y perfil profesional base; disponibilidad individual, publicación por lotes, bloqueo/republicación e historial de turnos. |
-| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                             |
+| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                           |
+| --------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                          |
+| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                  |
+| `ADMINISTRATOR` | Administración  | Gestión de veterinarios y disponibilidad; agenda, detalle e historial de citas y confirmación/rechazo de solicitudes según permisos. |
+| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                     |
 
 El acceso público incluye login, registro de propietarios, recuperación de
 contraseña en tres pasos y activación de personal mediante invitación. Login,
@@ -72,7 +73,29 @@ propietario de mañana a 60 días. Un resultado incierto bloquea otro envío y
 ofrece consultar todas las fechas y páginas, sin filtro de estado. Esa lectura
 muestra la agenda vigente y no prueba qué intento creó los turnos encontrados.
 
+En **Citas**, el administrador con `APPOINTMENT_READ_ALL` consulta una agenda
+por rango de hasta 31 fechas inclusivas y estado, con páginas de 20 registros.
+El detalle relee la cita actual y su historial paginado. Muestra mascota,
+propietario y teléfono autorizado, veterinario, motivo, horario de Bogotá y
+estados independientes de cita y asignación, sin solicitar el correo.
+
+Con `APPOINTMENT_MANAGE` puede confirmar o rechazar una solicitud mediante
+revisión y confirmación explícitas. El rechazo requiere motivo de hasta 1000
+caracteres. El servidor comprueba versión, transición, participantes y corte
+persistido; el cliente no inventa una hora de corte a partir del DTO. Un
+conflicto o respuesta incierta exige consultar detalle e historial antes de
+otra decisión. No se reenvía automáticamente el cambio ni se atribuye a un
+intento previo el estado observado después.
+
 ## Validación y pendientes
+
+La [verificación de citas administrativas del 23/10/2026](docs/verificacion-citas-administrativas-2026-10-23.md)
+registra **552 pruebas en 40 archivos**, tipos, lint y exportación web correctos.
+Incluye 50 peticiones HTTP nuevas (46 con esquema), 10 comprobaciones del
+cliente real mediante 26 peticiones de producto y recorridos de navegador
+con datos ficticios. Se comprobaron decisiones, versiones, resultado incierto,
+historial paginado, permisos de consulta, foco y presentación móvil. El informe
+distingue estos resultados de la aceptación con cuentas y transacciones reales.
 
 La [verificación de lotes del 23/10/2026](docs/verificacion-lotes-disponibilidad-2026-10-23.md)
 registra TypeScript, ESLint, **446 pruebas en 38 archivos**, exportación web y
@@ -85,8 +108,7 @@ checkbox por teclado, foco, confirmaciones y presentación móvil a 390 px.
 
 La [verificación individual anterior](docs/verificacion-disponibilidad-2026-10-23.md)
 conserva su corte de **390 pruebas en 35 archivos**, agenda individual,
-versiones, historial, reservas protegidas y reconciliación. La publicación
-del incremento de lotes todavía requiere su propio commit y despliegue.
+versiones, historial, reservas protegidas y reconciliación.
 
 La [continuidad anterior del mismo día](docs/verificacion-continuidad-frontend-2026-10-23.md)
 conserva la evidencia de recuperación, resultados inciertos, páginas
@@ -106,9 +128,11 @@ aceptación del servicio real. Continúan pendientes:
   Android/iOS, instalación y uso sin conexión de la PWA.
 - Evaluación integral de accesibilidad con lector de pantalla y personas
   usuarias. Las comprobaciones existentes no constituyen una certificación.
+- [Mejora de las plantillas de correo del backend](docs/pendientes-proyecto.md),
+  pendiente recordado por el usuario el 23/10/2026.
 
-No se incluyen gestión administrativa de citas, cancelación o reprogramación
-por el propietario, atención clínica,
+No se incluyen cambios administrativos de horario, cancelación, inasistencia
+o reasignación de citas, cancelación/reprogramación por el propietario, atención clínica,
 títulos adicionales ni archivos de diplomas. La agenda del rol veterinario
 es de consulta.
 

@@ -98,6 +98,12 @@ const accounts = [
     email: "unavailable-administrator@roles.test",
     role: "ADMINISTRATOR",
   },
+  {
+    id: "00000000-0000-4000-8000-000000000011",
+    email: "read-only-administrator@roles.test",
+    role: "ADMINISTRATOR",
+    permissions: ["APPOINTMENT_READ_ALL"],
+  },
 ].map((account) => ({
   ...account,
   permissions: account.permissions ?? permissions[account.role],
@@ -183,6 +189,9 @@ const availabilitySlots = [];
 const availabilityEvents = [];
 const occupiedAvailabilitySlots = new Set();
 const referencedAvailabilitySlots = new Set();
+let storedAppointments = null;
+const appointmentEvents = [];
+const appointmentMetadata = new Map();
 
 function publicUser(user) {
   return {
@@ -239,6 +248,9 @@ function resetData() {
   recoveryChallenges.clear();
   recoveryRequestTimes.clear();
   expandedPetOwnerId = null;
+  storedAppointments = null;
+  appointmentEvents.length = 0;
+  appointmentMetadata.clear();
   for (const account of accounts)
     users.set(account.id, {
       ...account,
@@ -300,9 +312,9 @@ const pets = [
   updatedAt: "2026-10-20T14:00:00Z",
 }));
 
-function businessDate() {
+function businessDate(now = Date.now()) {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: TIME_ZONE }).format(
-    new Date(),
+    new Date(now),
   );
 }
 function shiftedBusinessDate(days) {
@@ -386,8 +398,9 @@ function resetAvailability() {
   availabilityEvents.push(availabilityEvent(other, accounts[1].id, "CREATED"));
 }
 function appointmentRecords() {
+  if (storedAppointments) return storedAppointments;
   const day = businessDate();
-  return [0, 1].map((index) => ({
+  const initial = [0, 1].map((index) => ({
     id: recordId("d1000000", index + 1),
     ownerId: accounts[index === 0 ? 3 : 4].id,
     ownerFullName: `Propietario de simulación ${index + 1}`,
@@ -406,6 +419,419 @@ function appointmentRecords() {
     updatedAt: "2026-10-20T14:00:00Z",
     timeZone: TIME_ZONE,
   }));
+  const tomorrow = shiftedBusinessDate(1);
+  for (let index = 0; index < 25; index += 1) {
+    const ownerIndex = index % 2 === 0 ? 3 : 4;
+    const pet = pets[ownerIndex === 3 ? 0 : 2];
+    const veterinarian = veterinarians[index % 2 === 0 ? 0 : 3];
+    const startsAt = Date.parse(`${tomorrow}T13:00:00Z`) + index * 1_800_000;
+    initial.push({
+      ...initial[0],
+      id: recordId("d1000000", index + 3),
+      ownerId: accounts[ownerIndex].id,
+      ownerFullName: `Propietario de simulación ${ownerIndex === 3 ? 1 : 2}`,
+      petId: pet.id,
+      petName: `${pet.name} · solicitud ${index + 1}`,
+      veterinarianId: veterinarian.id,
+      veterinarianFullName: veterinarian.fullName,
+      status: index % 6 === 0 ? "CONFIRMED" : "REQUESTED",
+      assignmentStatus: index === 23 ? "NEEDS_REASSIGNMENT" : "ASSIGNED",
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(startsAt + 1_800_000).toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  storedAppointments = initial;
+  for (const appointment of storedAppointments) {
+    appointmentMetadata.set(appointment.id, {
+      slotId: randomUUID(),
+      cutoffAt: Date.parse(
+        `${businessDate(Date.parse(appointment.startsAt))}T11:00:00Z`,
+      ),
+      participantInactive: false,
+      lastStatusOperation: null,
+    });
+    appointmentEvents.push(
+      appointmentEvent(
+        appointment,
+        "REQUESTED",
+        appointment.ownerId,
+        null,
+        appointment.reason,
+      ),
+    );
+    if (appointment.status === "CONFIRMED") {
+      appointment.version = 1;
+      appointmentEvents.push(
+        appointmentEvent(appointment, "CONFIRMED", accounts[1].id, "REQUESTED"),
+      );
+    }
+  }
+  return storedAppointments;
+}
+
+function appointmentEvent(
+  appointment,
+  eventType,
+  actorId,
+  previousStatus,
+  reason = null,
+) {
+  const metadata = appointmentMetadata.get(appointment.id);
+  return {
+    id: randomUUID(),
+    appointmentId: appointment.id,
+    appointmentVersion: appointment.version,
+    eventType,
+    actorType: actorId ? "HUMAN" : "SYSTEM",
+    actorId,
+    previousStatus,
+    newStatus: eventType === "REQUESTED" ? "REQUESTED" : appointment.status,
+    previousAssignmentStatus:
+      previousStatus === null ? null : appointment.assignmentStatus,
+    newAssignmentStatus: appointment.assignmentStatus,
+    previousSlotId: previousStatus === null ? null : metadata.slotId,
+    newSlotId: metadata.slotId,
+    reason,
+    occurredAt: new Date().toISOString(),
+  };
+}
+
+function canReadAppointment(user, appointment) {
+  return (
+    (user.role === "ADMINISTRATOR" &&
+      user.permissions.includes("APPOINTMENT_READ_ALL")) ||
+    (user.role === "OWNER" &&
+      user.permissions.includes("APPOINTMENT_READ_SELF") &&
+      appointment.ownerId === user.id) ||
+    (user.role === "VETERINARIAN" &&
+      user.permissions.includes("APPOINTMENT_READ_ASSIGNED") &&
+      appointment.veterinarianId === user.id)
+  );
+}
+
+// Match String.strip/isBlank in the Java contract, excluding nonbreaking spaces.
+function normalizedAppointmentReason(reason) {
+  return (
+    reason?.replace(
+      /^[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+$/g,
+      "",
+    ) || null
+  );
+}
+
+async function handleAppointments(
+  request,
+  response,
+  bodyPromise,
+  path,
+  session,
+) {
+  const match =
+    /^\/api\/v1\/appointments(?:\/([^/]+)(?:\/(status|events))?)?$/.exec(path);
+  if (!match) return false;
+  const user = session.user;
+  const method = request.method;
+  const records = appointmentRecords();
+  const forbidden = () =>
+    problem(
+      response,
+      403,
+      "ACCESS_DENIED",
+      "El rol no permite esta operación.",
+    );
+  if (method === "PATCH" && match[2] === "status") {
+    if (
+      user.role !== "ADMINISTRATOR" ||
+      !user.permissions.includes("APPOINTMENT_MANAGE")
+    ) {
+      forbidden();
+      return true;
+    }
+    const body = await bodyPromise;
+    if (!objectWithFields(body, ["status", "expectedVersion", "reason"])) {
+      problem(
+        response,
+        400,
+        "UNKNOWN_PROPERTY",
+        "La estructura del cambio no es válida.",
+      );
+      return true;
+    }
+    if (
+      (body.status !== null &&
+        body.status !== undefined &&
+        (typeof body.status !== "string" ||
+          ![
+            "REQUESTED",
+            "CONFIRMED",
+            "REJECTED",
+            "CANCELLED",
+            "NO_SHOW",
+          ].includes(body.status))) ||
+      (body.expectedVersion !== null &&
+        body.expectedVersion !== undefined &&
+        !Number.isSafeInteger(body.expectedVersion)) ||
+      (body.reason !== null &&
+        body.reason !== undefined &&
+        typeof body.reason !== "string")
+    ) {
+      problem(
+        response,
+        400,
+        "TYPE_MISMATCH",
+        "El tipo de un campo no es válido.",
+      );
+      return true;
+    }
+    if (
+      !Number.isSafeInteger(body.expectedVersion) ||
+      body.expectedVersion < 0 ||
+      typeof body.status !== "string" ||
+      (body.reason !== undefined &&
+        body.reason !== null &&
+        (typeof body.reason !== "string" || body.reason.length > 1000))
+    ) {
+      problem(
+        response,
+        400,
+        "VALIDATION_FAILED",
+        "Revisa estado, versión y motivo.",
+      );
+      return true;
+    }
+    if (["CANCELLED", "NO_SHOW"].includes(body.status)) {
+      problem(
+        response,
+        501,
+        "SIMULATION_ENDPOINT_NOT_MODELED",
+        "Este incremento solo modela confirmar y rechazar solicitudes.",
+      );
+      return true;
+    }
+    if (!["CONFIRMED", "REJECTED"].includes(body.status)) {
+      problem(
+        response,
+        409,
+        "APPOINTMENT_TRANSITION_NOT_ALLOWED",
+        "Esta transición no está permitida.",
+      );
+      return true;
+    }
+    const reason = normalizedAppointmentReason(body.reason);
+    if (body.status === "REJECTED" && !reason) {
+      problem(
+        response,
+        400,
+        "INVALID_APPOINTMENT_REQUEST",
+        "Indica el motivo del rechazo.",
+      );
+      return true;
+    }
+    const appointment = records.find((item) => item.id === match[1]);
+    if (!appointment) {
+      problem(response, 404, "APPOINTMENT_NOT_FOUND", "La cita no existe.");
+      return true;
+    }
+    const metadata = appointmentMetadata.get(appointment.id);
+    const previousOperation = metadata.lastStatusOperation;
+    if (
+      appointment.version === body.expectedVersion + 1 &&
+      appointment.status === body.status &&
+      previousOperation?.actorId === user.id &&
+      previousOperation.target === body.status &&
+      previousOperation.reason === reason &&
+      previousOperation.version === appointment.version
+    ) {
+      await mutationResponse(response, 200, structuredClone(appointment));
+      return true;
+    }
+    if (appointment.version !== body.expectedVersion) {
+      problem(
+        response,
+        409,
+        "CONCURRENT_UPDATE",
+        "Los datos cambiaron. Consulta la cita actual.",
+      );
+      return true;
+    }
+    if (appointment.status !== "REQUESTED") {
+      problem(
+        response,
+        409,
+        "APPOINTMENT_TRANSITION_NOT_ALLOWED",
+        "La solicitud ya cambió de estado.",
+      );
+      return true;
+    }
+    if (body.status === "CONFIRMED") {
+      if (
+        Date.now() >= metadata.cutoffAt ||
+        Date.now() >= Date.parse(appointment.startsAt)
+      ) {
+        problem(
+          response,
+          409,
+          "APPOINTMENT_CONFIRMATION_CUTOFF_PASSED",
+          "La solicitud llegó a su corte o el turno comenzó.",
+        );
+        return true;
+      }
+      const owner = users.get(appointment.ownerId);
+      const veterinarian = users.get(appointment.veterinarianId);
+      const pet = pets.find((item) => item.id === appointment.petId);
+      if (
+        metadata.participantInactive ||
+        owner?.status !== "ACTIVE" ||
+        owner.role !== "OWNER" ||
+        veterinarian?.status !== "ACTIVE" ||
+        !pet?.active
+      ) {
+        problem(
+          response,
+          409,
+          "APPOINTMENT_PARTICIPANT_INACTIVE",
+          "Un participante o el turno ya no está habilitado.",
+        );
+        return true;
+      }
+    }
+    const previousStatus = appointment.status;
+    appointment.status = body.status;
+    appointment.version += 1;
+    appointment.updatedAt = new Date().toISOString();
+    metadata.lastStatusOperation = {
+      actorId: user.id,
+      target: body.status,
+      reason,
+      version: appointment.version,
+    };
+    appointmentEvents.push(
+      appointmentEvent(
+        appointment,
+        body.status,
+        user.id,
+        previousStatus,
+        reason,
+      ),
+    );
+    await mutationResponse(response, 200, structuredClone(appointment));
+    return true;
+  }
+  if (method !== "GET") {
+    problem(
+      response,
+      501,
+      "SIMULATION_ENDPOINT_NOT_MODELED",
+      "Esta operación no está modelada.",
+    );
+    return true;
+  }
+  const readPermission = {
+    ADMINISTRATOR: "APPOINTMENT_READ_ALL",
+    OWNER: "APPOINTMENT_READ_SELF",
+    VETERINARIAN: "APPOINTMENT_READ_ASSIGNED",
+  }[user.role];
+  if (!readPermission || !user.permissions.includes(readPermission)) {
+    forbidden();
+    return true;
+  }
+  const url = new URL(request.url, "http://simulation.invalid");
+  if (!match[1]) {
+    const range = dateRange(url);
+    const page = pagination(url);
+    const status = url.searchParams.get("status");
+    if (
+      !range ||
+      !page ||
+      (status !== null &&
+        ![
+          "REQUESTED",
+          "CONFIRMED",
+          "REJECTED",
+          "CANCELLED",
+          "NO_SHOW",
+        ].includes(status))
+    ) {
+      problem(
+        response,
+        400,
+        "INVALID_APPOINTMENT_REQUEST",
+        "Revisa el rango de 1 a 31 fechas, el estado y la paginación.",
+      );
+      return true;
+    }
+    const visible = records
+      .filter((appointment) => {
+        const day = businessDate(Date.parse(appointment.startsAt));
+        return (
+          canReadAppointment(user, appointment) &&
+          day >= range.from &&
+          day <= range.to &&
+          (status === null || status === appointment.status)
+        );
+      })
+      .sort(
+        (left, right) =>
+          Date.parse(left.startsAt) - Date.parse(right.startsAt) ||
+          left.id.localeCompare(right.id),
+      );
+    send(response, 200, pageOf(visible, page));
+    return true;
+  }
+  const appointment = records.find((item) => item.id === match[1]);
+  if (!appointment || !canReadAppointment(user, appointment)) {
+    problem(
+      response,
+      404,
+      "APPOINTMENT_NOT_FOUND",
+      "La cita no existe o no pertenece a esta cuenta.",
+    );
+    return true;
+  }
+  if (!match[2]) {
+    send(response, 200, appointment);
+    return true;
+  }
+  if (match[2] === "events") {
+    const page = pagination(url);
+    if (!page)
+      problem(
+        response,
+        400,
+        "INVALID_APPOINTMENT_REQUEST",
+        "La paginación no es válida.",
+      );
+    else
+      send(
+        response,
+        200,
+        pageOf(
+          appointmentEvents
+            .filter(
+              (event) =>
+                event.appointmentId === appointment.id &&
+                (user.role === "ADMINISTRATOR" ||
+                  event.eventType !== "EMAIL_ACCESSED"),
+            )
+            .sort(
+              (left, right) =>
+                Date.parse(left.occurredAt) - Date.parse(right.occurredAt) ||
+                left.id.localeCompare(right.id),
+            ),
+          page,
+        ),
+      );
+    return true;
+  }
+  problem(
+    response,
+    501,
+    "SIMULATION_ENDPOINT_NOT_MODELED",
+    "Esta operación no está modelada.",
+  );
+  return true;
 }
 function send(response, status, body, headers = {}) {
   response.writeHead(status, {
@@ -1598,6 +2024,41 @@ async function handle(request, response, bodyPromise) {
   if (method === "POST" && url.pathname === "/__simulation/fixture") {
     const body = await bodyPromise;
     const user = [...users.values()].find((item) => item.email === body.email);
+    if (body.action === "appointment-state") {
+      const appointment = appointmentRecords().find(
+        (item) => item.id === body.appointmentId,
+      );
+      if (!appointment)
+        return problem(
+          response,
+          404,
+          "SIMULATION_FIXTURE_NOT_FOUND",
+          "No existe la cita ficticia.",
+        );
+      const metadata = appointmentMetadata.get(appointment.id);
+      if (typeof body.cutoffPassed === "boolean")
+        metadata.cutoffAt = body.cutoffPassed
+          ? Date.now() - 1000
+          : Date.now() + 86_400_000;
+      if (typeof body.participantInactive === "boolean")
+        metadata.participantInactive = body.participantInactive;
+      if (["ASSIGNED", "NEEDS_REASSIGNMENT"].includes(body.assignmentStatus))
+        appointment.assignmentStatus = body.assignmentStatus;
+      if (body.advanceVersion === true) {
+        appointment.version += 1;
+        appointment.updatedAt = new Date().toISOString();
+        appointmentEvents.push(
+          appointmentEvent(
+            appointment,
+            "VETERINARIAN_RESTORED",
+            null,
+            appointment.status,
+            "Cambio concurrente ficticio",
+          ),
+        );
+      }
+      return send(response, 204);
+    }
     if (
       body.action === "next-authentication" &&
       [
@@ -2101,7 +2562,7 @@ async function handle(request, response, bodyPromise) {
     /^\/api\/v1\/veterinarians\/[^/]+\/availability-slots(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(
       path,
     ) ||
-    path === "/api/v1/appointments";
+    /^\/api\/v1\/appointments(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(path);
   if (!modeled)
     return problem(
       response,
@@ -2128,6 +2589,8 @@ async function handle(request, response, bodyPromise) {
   if (await handleAvailability(request, response, bodyPromise, path, session))
     return;
   if (await handleStaff(request, response, bodyPromise, path, session)) return;
+  if (await handleAppointments(request, response, bodyPromise, path, session))
+    return;
   if (method !== "GET" || path === "/api/v1/auth/sessions/current")
     return problem(
       response,
@@ -2322,45 +2785,6 @@ async function handle(request, response, bodyPromise) {
         page,
       ),
     );
-  }
-  if (path === "/api/v1/appointments") {
-    if (user.role === "SUPER_ADMIN") return forbidden();
-    const range = dateRange(url);
-    if (!range)
-      return problem(
-        response,
-        400,
-        "INVALID_APPOINTMENT_REQUEST",
-        "El rango debe incluir entre 1 y 31 fechas.",
-      );
-    const status = url.searchParams.get("status");
-    if (
-      status !== null &&
-      !["REQUESTED", "CONFIRMED", "REJECTED", "CANCELLED", "NO_SHOW"].includes(
-        status,
-      )
-    )
-      return problem(
-        response,
-        400,
-        "INVALID_REQUEST",
-        "El estado de cita no es válido.",
-      );
-    const visible = appointmentRecords().filter((appointment) => {
-      const localDay = new Intl.DateTimeFormat("sv-SE", {
-        timeZone: TIME_ZONE,
-      }).format(new Date(appointment.startsAt));
-      return (
-        localDay >= range.from &&
-        localDay <= range.to &&
-        (status === null || appointment.status === status) &&
-        (user.role === "ADMINISTRATOR" ||
-          (user.role === "OWNER" && appointment.ownerId === user.id) ||
-          (user.role === "VETERINARIAN" &&
-            appointment.veterinarianId === user.id))
-      );
-    });
-    return send(response, 200, pageOf(visible, page));
   }
   return problem(
     response,

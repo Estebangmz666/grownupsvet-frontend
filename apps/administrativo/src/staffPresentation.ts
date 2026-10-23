@@ -1,4 +1,5 @@
 import type { StaffRole } from "./staff.types";
+import type { AuthenticatedUser } from "@grownupsvet/api-client";
 
 export const staffRoleLabels: Record<StaffRole, string> = {
   SUPER_ADMIN: "Superadministrador",
@@ -8,7 +9,7 @@ export const staffRoleLabels: Record<StaffRole, string> = {
 
 export const staffAreaTitles: Record<StaffRole, string> = {
   SUPER_ADMIN: "Administradores",
-  ADMINISTRATOR: "Veterinarios",
+  ADMINISTRATOR: "Administración",
   VETERINARIAN: "Mi agenda",
 };
 
@@ -20,6 +21,17 @@ export const staffRequiredPermissions: Record<StaffRole, string> = {
 
 export function isStaffRole(role: string): role is StaffRole {
   return Object.hasOwn(staffRoleLabels, role);
+}
+
+export function canAccessStaffArea(user: AuthenticatedUser): boolean {
+  if (!isStaffRole(user.role)) return false;
+  if (user.role === "ADMINISTRATOR") {
+    return (
+      user.permissions.includes("VETERINARIAN_MANAGE") ||
+      user.permissions.includes("APPOINTMENT_READ_ALL")
+    );
+  }
+  return user.permissions.includes(staffRequiredPermissions[user.role]);
 }
 
 export function bogotaToday(now = new Date()): string {

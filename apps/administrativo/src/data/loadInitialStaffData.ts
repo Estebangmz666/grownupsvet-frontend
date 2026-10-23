@@ -1,5 +1,6 @@
 import { ApiError, type AuthenticatedUser } from "@grownupsvet/api-client";
 import type { ApiRequestContext } from "@api-client/client";
+import { listAdministrativeAppointments } from "@api-client/administrativeAppointments.api";
 import {
   listAdministrators,
   listAssignedAppointmentsForDay,
@@ -8,8 +9,8 @@ import {
 } from "@api-client/staff.api";
 import {
   bogotaToday,
+  canAccessStaffArea,
   isStaffRole,
-  staffRequiredPermissions,
 } from "../staffPresentation";
 import type { InitialStaffData } from "../staff.types";
 
@@ -17,10 +18,7 @@ export async function loadInitialStaffData(
   user: AuthenticatedUser,
   requestContext?: ApiRequestContext,
 ): Promise<InitialStaffData> {
-  if (
-    !isStaffRole(user.role) ||
-    !user.permissions.includes(staffRequiredPermissions[user.role])
-  ) {
+  if (!isStaffRole(user.role) || !canAccessStaffArea(user)) {
     throw new ApiError({
       status: 403,
       errorCode: "ACCESS_DENIED",
@@ -35,11 +33,21 @@ export async function loadInitialStaffData(
         role: user.role,
         page: await listAdministrators(params, {}, requestContext),
       };
-    case "ADMINISTRATOR":
-      return {
-        role: user.role,
-        page: await listVeterinarians(params, {}, requestContext),
-      };
+    case "ADMINISTRATOR": {
+      if (user.permissions.includes("VETERINARIAN_MANAGE")) {
+        return {
+          role: user.role,
+          page: await listVeterinarians(params, {}, requestContext),
+        };
+      }
+      // A stored permission snapshot cannot establish that the session is still authorized.
+      const day = bogotaToday();
+      await listAdministrativeAppointments(
+        { ...params, from: day, to: day },
+        requestContext,
+      );
+      return { role: user.role };
+    }
     case "VETERINARIAN": {
       const day = bogotaToday();
       return {

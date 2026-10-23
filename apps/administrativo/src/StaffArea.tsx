@@ -1,21 +1,92 @@
-import React from "react";
+import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StaffButton } from "./components/StaffComponents";
 import { AssignedAppointmentsScreen } from "./screens/AssignedAppointmentsScreen";
 import { StaffAccountsScreen } from "./screens/StaffAccountsScreen";
+import { AdministrativeAppointmentsScreen } from "./screens/AdministrativeAppointmentsScreen";
+import { administrativeAppointmentPermissions } from "./administrativeAppointmentsPresentation";
+import { StaffMutationActivityProvider } from "./hooks/StaffMutationActivity";
+import { useStaffMutationActivity } from "./hooks/staffMutationActivityContext";
 import {
   isStaffRole,
+  canAccessStaffArea,
   staffAreaTitles,
-  staffRequiredPermissions,
   staffRoleLabels,
 } from "./staffPresentation";
 import { staffStyles as styles } from "./staffStyles";
 import type { StaffAreaProps } from "./staff.types";
 
+function AdministratorPanels({
+  user,
+  initialData,
+}: Pick<StaffAreaProps, "user" | "initialData">) {
+  const canManageVeterinarians =
+    user.role === "ADMINISTRATOR" &&
+    user.permissions.includes("VETERINARIAN_MANAGE");
+  const appointmentPermissions = administrativeAppointmentPermissions(user);
+  const [selectedPanel, setSelectedPanel] = useState<
+    "veterinarians" | "appointments"
+  >(canManageVeterinarians ? "veterinarians" : "appointments");
+  const [useInitialVeterinarians, setUseInitialVeterinarians] = useState(true);
+  const activity = useStaffMutationActivity();
+  const activePanel =
+    selectedPanel === "veterinarians" && canManageVeterinarians
+      ? "veterinarians"
+      : appointmentPermissions.canRead
+        ? "appointments"
+        : "veterinarians";
+  return (
+    <View style={styles.section}>
+      <View style={styles.controls}>
+        {canManageVeterinarians ? (
+          <StaffButton
+            label="Veterinarios"
+            selected={activePanel === "veterinarians"}
+            disabled={activity?.pending}
+            onPress={() => setSelectedPanel("veterinarians")}
+          />
+        ) : null}
+        {appointmentPermissions.canRead ? (
+          <StaffButton
+            label="Citas"
+            selected={activePanel === "appointments"}
+            disabled={activity?.pending}
+            onPress={() => {
+              setUseInitialVeterinarians(false);
+              setSelectedPanel("appointments");
+            }}
+          />
+        ) : null}
+      </View>
+      {activity?.pending ? (
+        <Text style={styles.description} accessibilityLiveRegion="polite">
+          Espera a que termine la operación antes de cambiar de sección.
+        </Text>
+      ) : null}
+      {activePanel === "veterinarians" && canManageVeterinarians ? (
+        <StaffAccountsScreen
+          kind="veterinarians"
+          canManageAvailability={user.permissions.includes(
+            "VETERINARIAN_AVAILABILITY_MANAGE",
+          )}
+          initialPage={
+            useInitialVeterinarians && initialData?.role === "ADMINISTRATOR"
+              ? initialData.page
+              : undefined
+          }
+        />
+      ) : appointmentPermissions.canRead ? (
+        <AdministrativeAppointmentsScreen
+          canManage={appointmentPermissions.canManage}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
   const role = isStaffRole(user.role) ? user.role : null;
-  const allowed =
-    role !== null && user.permissions.includes(staffRequiredPermissions[role]);
+  const allowed = role !== null && canAccessStaffArea(user);
   return (
     <View style={styles.root}>
       <ScrollView
@@ -59,15 +130,9 @@ function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
             }
           />
         ) : role === "ADMINISTRATOR" ? (
-          <StaffAccountsScreen
-            kind="veterinarians"
-            canManageAvailability={user.permissions.includes(
-              "VETERINARIAN_AVAILABILITY_MANAGE",
-            )}
-            initialPage={
-              initialData?.role === role ? initialData.page : undefined
-            }
-          />
+          <StaffMutationActivityProvider>
+            <AdministratorPanels user={user} initialData={initialData} />
+          </StaffMutationActivityProvider>
         ) : (
           <AssignedAppointmentsScreen
             initialDay={

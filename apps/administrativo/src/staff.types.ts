@@ -13,7 +13,7 @@ export type StaffRole = Exclude<AuthenticatedUser["role"], "OWNER">;
 /** Initial page already confirmed by the session loader; never persisted. */
 export type InitialStaffData =
   | { role: "SUPER_ADMIN"; page: Page<AdministratorResponseDTO> }
-  | { role: "ADMINISTRATOR"; page: Page<VeterinarianResponseDTO> }
+  | { role: "ADMINISTRATOR"; page?: Page<VeterinarianResponseDTO> }
   | { role: "VETERINARIAN"; day: string; page: Page<Appointment> };
 
 export interface StaffAreaProps {
