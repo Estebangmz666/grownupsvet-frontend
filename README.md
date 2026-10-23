@@ -109,7 +109,25 @@ actual y el historial. Un replay idempotente puede devolver una programación
 posterior; no se presenta el destino inicialmente seleccionado como vigente
 sin comprobar la respuesta.
 
+Desde el detalle administrativo se puede abrir **Ver avisos de la cita**.
+La consulta usa `APPOINTMENT_READ_ALL`, también para cuentas de solo lectura,
+y muestra los avisos en páginas de 20. Distingue programado, en proceso,
+aceptado por el servidor de correo, fallo de envío y aviso que ya no aplica.
+Conserva la fecha prevista, el próximo intento pendiente, la fecha de envío
+y el último código de fallo público como datos independientes. La aceptación
+SMTP no confirma entrega en el buzón ni lectura. Un error de esta consulta
+permite reintentar o volver al detalle; no solicita reenviar correos.
+
 ## Validación y pendientes
+
+La [verificación de avisos administrativos del 23/10/2026](docs/verificacion-avisos-administrativos-2026-10-23.md)
+registra **700 pruebas en 44 archivos**, tipos, lint y exportación web correctos.
+Incluye 16 comprobaciones del cliente real mediante 30 peticiones y un
+verificador independiente de 34 solicitudes, con 24 respuestas contra esquemas.
+Se recorrieron paginación, errores, sesión, acceso de solo lectura y móvil
+en el navegador, exclusivamente con datos ficticios. El
+[inventario de componentes](docs/inventario-portal-administrativo-2026-10-23.md)
+conserva el diagnóstico anterior a este incremento y los pendientes por área.
 
 La [verificación de cambios de citas del 23/10/2026](docs/verificacion-cambios-citas-2026-10-23.md)
 registra **626 pruebas en 42 archivos**, tipos, lint y exportación web correctos.

@@ -9,10 +9,12 @@ import {
 } from "./client";
 import type {
   AdministrativeAppointmentEventResponseDTO,
+  AdministrativeAppointmentNotificationResponseDTO,
   AdministrativeAppointmentDestinationSlotResponseDTO,
   AdministrativeAppointmentResponseDTO,
   ListAdministrativeAppointmentDestinationSlotsParams,
   ListAdministrativeAppointmentEventsParams,
+  ListAdministrativeAppointmentNotificationsParams,
   ListAdministrativeAppointmentsParams,
   ReassignAdministrativeAppointmentVeterinarianRequestDTO,
   RescheduleAdministrativeAppointmentRequestDTO,
@@ -45,6 +47,22 @@ const eventTypes = new Set([
   "VETERINARIAN_RESTORED",
   "REASSIGNED",
   "EMAIL_ACCESSED",
+]);
+const notificationTypes = new Set([
+  "ADMIN_REASSIGNMENT",
+  "OWNER_REASSIGNED",
+  "OWNER_CONFIRMED",
+  "OWNER_REJECTED",
+  "OWNER_CANCELLED",
+  "OWNER_RESCHEDULED",
+  "OWNER_REMINDER",
+]);
+const notificationStatuses = new Set([
+  "PENDING",
+  "SENDING",
+  "SENT",
+  "FAILED",
+  "SUPERSEDED",
 ]);
 const appointmentFields = [
   "id",
@@ -264,6 +282,43 @@ function parseEvent(
   return value as unknown as AdministrativeAppointmentEventResponseDTO;
 }
 
+function parseNotification(
+  value: unknown,
+  appointmentId: string,
+): AdministrativeAppointmentNotificationResponseDTO {
+  if (
+    !isRecord(value) ||
+    !hasExactFields(value, [
+      "id",
+      "appointmentId",
+      "notificationType",
+      "status",
+      "scheduledAt",
+      "nextAttemptAt",
+      "sentAt",
+      "attemptCount",
+      "errorCode",
+    ]) ||
+    !isUuid(value.id) ||
+    !isUuid(value.appointmentId) ||
+    !sameId(value.appointmentId, appointmentId) ||
+    typeof value.notificationType !== "string" ||
+    !notificationTypes.has(value.notificationType) ||
+    typeof value.status !== "string" ||
+    !notificationStatuses.has(value.status) ||
+    !isInstant(value.scheduledAt) ||
+    !(value.nextAttemptAt === null || isInstant(value.nextAttemptAt)) ||
+    (value.status !== "PENDING" && value.nextAttemptAt !== null) ||
+    !(value.sentAt === null || isInstant(value.sentAt)) ||
+    !isInteger(value.attemptCount) ||
+    !(value.errorCode === null || isText(value.errorCode, 64))
+  )
+    throw new Error(
+      "Los avisos no corresponden a la cita solicitada o a su contrato privado.",
+    );
+  return value as unknown as AdministrativeAppointmentNotificationResponseDTO;
+}
+
 function parsePage<T extends { id: string }>(
   value: unknown,
   parseItem: (item: unknown) => T,
@@ -407,6 +462,25 @@ export async function listAdministrativeAppointmentEvents(
   return parsePage(
     await requestAdministrativeJson(`${path}/events?${query}`, {}, context),
     (value) => parseEvent(value, appointmentId),
+    params.page,
+    params.size,
+  );
+}
+
+export async function listAdministrativeAppointmentNotifications(
+  appointmentId: string,
+  params: ListAdministrativeAppointmentNotificationsParams = {},
+  context?: ApiRequestContext,
+): Promise<Page<AdministrativeAppointmentNotificationResponseDTO>> {
+  const path = appointmentPath(appointmentId);
+  const query = paginationQuery(params.page, params.size);
+  return parsePage(
+    await requestAdministrativeJson(
+      `${path}/notifications?${query}`,
+      {},
+      context,
+    ),
+    (value) => parseNotification(value, appointmentId),
     params.page,
     params.size,
   );

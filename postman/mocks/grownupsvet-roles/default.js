@@ -193,6 +193,8 @@ let storedAppointments = null;
 const appointmentEvents = [];
 const appointmentMetadata = new Map();
 let appointmentChangesPrepared = false;
+const appointmentNotifications = [];
+let nextNotificationRead = null;
 
 function publicUser(user) {
   return {
@@ -253,6 +255,8 @@ function resetData() {
   appointmentEvents.length = 0;
   appointmentMetadata.clear();
   appointmentChangesPrepared = false;
+  appointmentNotifications.length = 0;
+  nextNotificationRead = null;
   for (const account of accounts)
     users.set(account.id, {
       ...account,
@@ -923,6 +927,166 @@ async function handleAppointmentMove(
   appointmentEvents.push(event);
   metadata.moveOperations.set(operationKey, fingerprint);
   return mutationResponse(response, 200, structuredClone(appointment));
+}
+
+function prepareAppointmentNotifications(appointment, count = 26) {
+  // Explicit fixtures only: no SMTP dispatcher or production queue is simulated.
+  for (let index = appointmentNotifications.length - 1; index >= 0; index -= 1)
+    if (appointmentNotifications[index].appointmentId === appointment.id)
+      appointmentNotifications.splice(index, 1);
+  const ownerTypes = [
+    "OWNER_CONFIRMED",
+    "OWNER_REJECTED",
+    "OWNER_CANCELLED",
+    "OWNER_RESCHEDULED",
+    "OWNER_REASSIGNED",
+    "OWNER_REMINDER",
+  ];
+  const notificationStatuses = [
+    "SENT",
+    "PENDING",
+    "SENDING",
+    "FAILED",
+    "SUPERSEDED",
+  ];
+  const day = businessDate();
+  for (let index = 0; index < count; index += 1) {
+    const status = notificationStatuses[index % notificationStatuses.length];
+    const internal = index === 25;
+    appointmentNotifications.push({
+      id: recordId(
+        "e1000000",
+        Number(appointment.id.slice(-6)) * 100 + index + 1,
+      ),
+      appointmentId: appointment.id,
+      recipientId: internal ? accounts[1].id : appointment.ownerId,
+      notificationType: internal
+        ? "ADMIN_REASSIGNMENT"
+        : ownerTypes[index % ownerTypes.length],
+      status,
+      scheduledAt: index === 0 ? `${day}T04:30:00Z` : `${day}T15:00:00Z`,
+      nextAttemptAt: status === "PENDING" ? `${day}T20:00:00Z` : null,
+      sentAt: status === "SENT" ? `${day}T16:00:00Z` : null,
+      attemptCount: status === "SUPERSEDED" ? 0 : status === "SENT" ? 1 : 2,
+      errorCode:
+        status === "PENDING"
+          ? "SMTP_DELIVERY_FAILED"
+          : status === "FAILED"
+            ? "DELIVERY_ATTEMPTS_EXHAUSTED"
+            : status === "SUPERSEDED"
+              ? "NOTICE_NO_LONGER_CURRENT"
+              : null,
+    });
+  }
+}
+
+async function handleAppointmentNotifications(
+  request,
+  response,
+  path,
+  session,
+) {
+  const match = /^\/api\/v1\/appointments\/([^/]+)\/notifications$/.exec(path);
+  if (!match) return false;
+  if (request.method !== "GET") {
+    problem(
+      response,
+      501,
+      "SIMULATION_ENDPOINT_NOT_MODELED",
+      "Esta operación no está modelada.",
+    );
+    return true;
+  }
+  const user = session.user;
+  const permission = {
+    OWNER: "APPOINTMENT_READ_SELF",
+    ADMINISTRATOR: "APPOINTMENT_READ_ALL",
+  }[user.role];
+  if (!permission || !user.permissions.includes(permission)) {
+    problem(
+      response,
+      403,
+      "ACCESS_DENIED",
+      "La cuenta no tiene permiso para consultar estos avisos.",
+    );
+    return true;
+  }
+  const page = pagination(new URL(request.url, "http://simulation.invalid"));
+  if (!page) {
+    problem(
+      response,
+      400,
+      "INVALID_APPOINTMENT_REQUEST",
+      "La paginación no es válida.",
+    );
+    return true;
+  }
+  const appointment = appointmentRecords().find((item) => item.id === match[1]);
+  if (
+    !appointment ||
+    (user.role === "OWNER" && appointment.ownerId !== user.id)
+  ) {
+    problem(
+      response,
+      404,
+      "APPOINTMENT_NOT_FOUND",
+      "No se encontró la cita solicitada.",
+    );
+    return true;
+  }
+  const entries = appointmentNotifications
+    .filter(
+      (item) =>
+        item.appointmentId === appointment.id &&
+        (user.role === "ADMINISTRATOR" || item.recipientId === user.id),
+    )
+    .map(({ recipientId, ...item }) => {
+      void recipientId;
+      return item;
+    });
+  const body = structuredClone(pageOf(entries, page));
+  const control =
+    nextNotificationRead?.appointmentId === appointment.id
+      ? nextNotificationRead
+      : null;
+  if (control) nextNotificationRead = null;
+  if (control?.delayMs)
+    await new Promise((resolve) => setTimeout(resolve, control.delayMs));
+  if (control?.mode === "unavailable")
+    problem(
+      response,
+      503,
+      "SIMULATION_TEMPORARY_UNAVAILABLE",
+      "La consulta de avisos falló temporalmente.",
+    );
+  else if (control?.mode === "forbidden")
+    problem(
+      response,
+      403,
+      "ACCESS_DENIED",
+      "La cuenta ya no tiene permiso para consultar estos avisos.",
+    );
+  else if (control?.mode === "missing")
+    problem(
+      response,
+      404,
+      "APPOINTMENT_NOT_FOUND",
+      "No se encontró la cita solicitada.",
+    );
+  else if (control?.mode === "invalid-json") {
+    response.writeHead(200, {
+      "content-type": "application/json",
+      "cache-control": "private, no-store",
+    });
+    response.end('{"items":');
+  } else {
+    if (body.items[0] && control?.mode === "extra-field")
+      body.items[0].recipientEmail = "fictional@roles.test";
+    if (body.items[0] && control?.mode === "foreign")
+      body.items[0].appointmentId = recordId("d1000000", 999);
+    send(response, 200, body);
+  }
+  return true;
 }
 
 async function handleAppointments(
@@ -2468,6 +2632,47 @@ async function handle(request, response, bodyPromise) {
   if (method === "POST" && url.pathname === "/__simulation/fixture") {
     const body = await bodyPromise;
     const user = [...users.values()].find((item) => item.email === body.email);
+    if (body.action === "prepare-appointment-notifications") {
+      const appointment = appointmentRecords().find(
+        (item) => item.id === body.appointmentId,
+      );
+      const count = body.count ?? 26;
+      if (!appointment || !Number.isInteger(count) || count < 0 || count > 26)
+        return problem(
+          response,
+          400,
+          "SIMULATION_FIXTURE_INVALID",
+          "Revisa la cita ficticia y el número de avisos de 0 a 26.",
+        );
+      prepareAppointmentNotifications(appointment, count);
+      return send(response, 204);
+    }
+    if (body.action === "next-notification-read") {
+      if (
+        !appointmentRecords().some((item) => item.id === body.appointmentId) ||
+        ![
+          "normal",
+          "unavailable",
+          "forbidden",
+          "missing",
+          "invalid-json",
+          "extra-field",
+          "foreign",
+        ].includes(body.mode)
+      )
+        return problem(
+          response,
+          400,
+          "SIMULATION_FIXTURE_INVALID",
+          "Revisa el control de consulta de avisos.",
+        );
+      nextNotificationRead = {
+        appointmentId: body.appointmentId,
+        mode: body.mode,
+        delayMs: Math.max(0, Math.min(5000, Number(body.delayMs) || 0)),
+      };
+      return send(response, 204);
+    }
     if (body.action === "prepare-appointment-changes") {
       prepareAppointmentChanges();
       return send(response, 204);
@@ -3067,7 +3272,8 @@ async function handle(request, response, bodyPromise) {
     ) ||
     /^\/api\/v1\/appointments(?:\/[^/]+(?:\/(?:status|events|reschedulings|veterinarian-reassignments))?)?$/.test(
       path,
-    );
+    ) ||
+    /^\/api\/v1\/appointments\/[^/]+\/notifications$/.test(path);
   if (!modeled)
     return problem(
       response,
@@ -3094,6 +3300,8 @@ async function handle(request, response, bodyPromise) {
   if (await handleAvailability(request, response, bodyPromise, path, session))
     return;
   if (await handleStaff(request, response, bodyPromise, path, session)) return;
+  if (await handleAppointmentNotifications(request, response, path, session))
+    return;
   if (await handleAppointments(request, response, bodyPromise, path, session))
     return;
   if (method !== "GET" || path === "/api/v1/auth/sessions/current")

@@ -45,6 +45,7 @@ export function AdministrativeAppointmentDetailsScreen({
   initialMessage,
   initialFailure,
   onMove,
+  onNotifications,
   onBack,
 }: {
   appointmentId: string;
@@ -57,6 +58,7 @@ export function AdministrativeAppointmentDetailsScreen({
     appointment: Appointment,
   ) => void;
   onBack: () => void;
+  onNotifications?: (appointment: Pick<Appointment, "id" | "petName">) => void;
 }) {
   const [historyPage, setHistoryPage] = useState(0);
   const historyHeadingId = useId();
@@ -205,6 +207,13 @@ export function AdministrativeAppointmentDetailsScreen({
           onPress={consultCurrent}
           disabled={mutation.pending || result.loading}
         />
+        {onNotifications && appointment ? (
+          <StaffButton
+            label="Ver avisos de la cita"
+            onPress={() => onNotifications(appointment)}
+            disabled={mutation.pending}
+          />
+        ) : null}
       </View>
       {message ? <StaffSuccessNotice message={message} /> : null}
       {failure ? <StaffErrorSummary message={failure.error.message} /> : null}

@@ -1,4 +1,9 @@
-import type { Appointment, AppointmentEvent, AppointmentStatus } from "./types";
+import type {
+  Appointment,
+  AppointmentEvent,
+  AppointmentNotification,
+  AppointmentStatus,
+} from "./types";
 import type {
   ListVeterinarianAvailabilitySlotsParams,
   VeterinarianAvailabilitySlotResponseDTO,
@@ -7,6 +12,8 @@ import type {
 /** Existing backend AppointmentResponseDTO, with no owner email or cutoff field. */
 export type AdministrativeAppointmentResponseDTO = Appointment;
 export type AdministrativeAppointmentEventResponseDTO = AppointmentEvent;
+export type AdministrativeAppointmentNotificationResponseDTO =
+  AppointmentNotification;
 export type AdministrativeAppointmentReviewStatus = "CONFIRMED" | "REJECTED";
 export type AdministrativeAppointmentManagementStatus =
   AdministrativeAppointmentReviewStatus | "CANCELLED" | "NO_SHOW";
@@ -29,6 +36,11 @@ export interface ListAdministrativeAppointmentsParams {
 }
 
 export interface ListAdministrativeAppointmentEventsParams {
+  page?: number;
+  size?: number;
+}
+
+export interface ListAdministrativeAppointmentNotificationsParams {
   page?: number;
   size?: number;
 }

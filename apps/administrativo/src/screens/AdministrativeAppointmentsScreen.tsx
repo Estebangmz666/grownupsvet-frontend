@@ -33,6 +33,7 @@ import {
 import { staffStyles as styles } from "../staffStyles";
 import { AdministrativeAppointmentDetailsScreen } from "./AdministrativeAppointmentDetailsScreen";
 import { AdministrativeAppointmentMoveScreen } from "./AdministrativeAppointmentMoveScreen";
+import { AdministrativeAppointmentNotificationsScreen } from "./AdministrativeAppointmentNotificationsScreen";
 import type { AdministrativeAppointmentMoveKind } from "../administrativeAppointmentChanges";
 
 const appointmentStatuses: Array<AppointmentStatus | undefined> = [
@@ -65,6 +66,10 @@ export function AdministrativeAppointmentsScreen({
   const [fieldErrors, setFieldErrors] =
     useState<AdministrativeAppointmentQueryErrors>({});
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const [notificationReference, setNotificationReference] = useState<Pick<
+    Appointment,
+    "id" | "petName"
+  > | null>(null);
   const [move, setMove] = useState<{
     appointment: Appointment;
     kind: AdministrativeAppointmentMoveKind;
@@ -104,6 +109,7 @@ export function AdministrativeAppointmentsScreen({
   };
   const backToList = () => {
     setAppointmentId(null);
+    setNotificationReference(null);
     setDetailNotice({});
     result.retry();
   };
@@ -124,6 +130,18 @@ export function AdministrativeAppointmentsScreen({
         onCompleted={(message) => showCurrentDetail(message)}
       />
     );
+  if (appointmentId && notificationReference?.id === appointmentId)
+    return (
+      <AdministrativeAppointmentNotificationsScreen
+        key={appointmentId}
+        appointmentId={appointmentId}
+        petName={notificationReference.petName}
+        onBack={() => {
+          setNotificationReference(null);
+          setDetailVisit((value) => value + 1);
+        }}
+      />
+    );
   if (appointmentId) {
     return (
       <AdministrativeAppointmentDetailsScreen
@@ -139,6 +157,12 @@ export function AdministrativeAppointmentsScreen({
             : undefined
         }
         onBack={backToList}
+        onNotifications={(appointment) =>
+          setNotificationReference({
+            id: appointment.id,
+            petName: appointment.petName,
+          })
+        }
       />
     );
   }

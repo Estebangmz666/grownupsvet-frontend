@@ -31,12 +31,49 @@ El alcance modelado es:
 - Disponibilidad administrativa: turnos individuales, cambios de hora/estado,
   historial y generación de lotes completos con rechazo de colisiones.
 - Citas administrativas: agenda global paginada, detalle e historial,
-  confirmación o rechazo de solicitudes con versión observada y replay limitado.
+  decisiones, reprogramación y reasignación con versión observada y replay.
+- Consulta de avisos por cita para administración y propietarios, con páginas
+  y destinatarios autorizados. Las fixtures aportan sus estados; no hay SMTP.
 
 Las operaciones restantes devuelven **501 SIMULATION_ENDPOINT_NOT_MODELED**.
 No se simulan creación o edición de mascotas, fotos,
 atención clínica ni operaciones fuera del alcance descrito. Un 501 es una
 limitación del entorno, no una respuesta atribuida a la API real.
+
+## Seguimiento administrativo de avisos
+
+El contrato existente `GET /appointments/{id}/notifications` admite un
+administrador con `APPOINTMENT_READ_ALL`, incluso sin permiso de gestión.
+OWNER solo consulta sus citas y los avisos destinados a él; veterinario y
+superadministrador reciben 403. La respuesta tiene nueve campos sin correo,
+destinatario, payload ni errores SMTP privados; páginas de 20, máximo 100.
+
+La fixture local `prepare-appointment-notifications` recibe `appointmentId`
+y `count` de 0 a 26 (26 por defecto). Los primeros 25 avisos corresponden al
+propietario; el último es un aviso interno con otro destinatario. Incluye
+los siete tipos, cinco estados, reintento pendiente con último código de
+fallo y fechas previstas distintas de las fechas de envío. Es una colección
+ficticia de lectura: no ejecuta un dispatcher ni demuestra persistencia,
+programación, envío o entrega reales.
+
+`next-notification-read` permite un fallo explícito de una sola consulta:
+`unavailable`, `forbidden`, `missing`, `invalid-json`, `extra-field`, `foreign`
+o `normal`, con `appointmentId` y `delayMs` opcional hasta 5000. Los tres modos
+de respuesta inválida están deliberadamente fuera del contrato para verificar
+que el cliente no presenta datos ajenos o campos privados. Son controles de
+prueba locales, no endpoints del producto.
+
+Con uso exclusivo de la simulación 4900, las comprobaciones son reproducibles:
+
+```powershell
+node postman/scripts/verify_administrative_notifications_client_http.mjs
+python -X utf8 postman/scripts/verify_administrative_notifications_http.py `
+  --spec '..\GrownupsVet\grownupsvet-backend\docs\openapi\openapi.json'
+```
+
+Ambos verificadores restablecen los datos ficticios al empezar y terminar.
+No ejecutarlos durante las pruebas de navegador. Los informes bajo
+`postman/.runtime` conservan metadatos sin credenciales ni cuerpos privados.
 
 ## Continuidad del frontend del 23/10/2026
 

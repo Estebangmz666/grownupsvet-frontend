@@ -102,7 +102,7 @@ export type NotificationStatus =
   "PENDING" | "SENDING" | "SENT" | "FAILED" | "SUPERSEDED";
 
 /**
- * Estado de entrega de un aviso de cita hacia el propietario. Corresponde a
+ * Estado de un aviso de cita consultable según rol y permisos. Corresponde a
  * `AppointmentNotificationResponseDTO` del contrato 0.9.0. El backend aclara
  * que `SENT` acredita aceptación del servidor de correo, no lectura en buzón.
  */

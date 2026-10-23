@@ -16,8 +16,15 @@ function focusStaffElement(id: string) {
   }
 }
 
-export function StaffHeading({ title }: { title: string }) {
-  const id = useId();
+export function StaffHeading({
+  title,
+  nativeID,
+}: {
+  title: string;
+  nativeID?: string;
+}) {
+  const generatedId = useId();
+  const id = nativeID ?? generatedId;
   useEffect(() => {
     focusStaffElement(id);
   }, [id]);
