@@ -370,7 +370,7 @@ describe("administrative request review", () => {
     { status: "CONFIRMED", expectedVersion: -1 },
     { status: "CONFIRMED", expectedVersion: 1.5 },
     { status: "CONFIRMED", expectedVersion: Number.MAX_SAFE_INTEGER },
-    { status: "CANCELLED", expectedVersion: 4, reason: "Motivo" },
+    { status: "REQUESTED", expectedVersion: 4, reason: "Motivo" },
     { status: "CONFIRMED", expectedVersion: 4, reason: "x".repeat(1001) },
   ])(
     "rejects unsupported or invalid review intents before HTTP: %j",

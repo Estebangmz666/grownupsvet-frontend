@@ -192,6 +192,7 @@ const referencedAvailabilitySlots = new Set();
 let storedAppointments = null;
 const appointmentEvents = [];
 const appointmentMetadata = new Map();
+let appointmentChangesPrepared = false;
 
 function publicUser(user) {
   return {
@@ -251,6 +252,7 @@ function resetData() {
   storedAppointments = null;
   appointmentEvents.length = 0;
   appointmentMetadata.clear();
+  appointmentChangesPrepared = false;
   for (const account of accounts)
     users.set(account.id, {
       ...account,
@@ -451,6 +453,7 @@ function appointmentRecords() {
       ),
       participantInactive: false,
       lastStatusOperation: null,
+      moveOperations: new Map(),
     });
     appointmentEvents.push(
       appointmentEvent(
@@ -521,6 +524,407 @@ function normalizedAppointmentReason(reason) {
   );
 }
 
+function prepareAppointmentChanges() {
+  if (appointmentChangesPrepared) return;
+  appointmentChangesPrepared = true;
+  // Opt-in local fixture: wire the independent appointment seeds to schedule rows.
+  for (const appointment of appointmentRecords()) {
+    let slot = availabilitySlots.find(
+      (item) =>
+        item.veterinarianId === appointment.veterinarianId &&
+        Date.parse(item.startsAt) === Date.parse(appointment.startsAt),
+    );
+    if (!slot) {
+      slot = newAvailabilitySlot(
+        appointment.veterinarianId,
+        Date.parse(appointment.startsAt),
+      );
+      availabilitySlots.push(slot);
+    }
+    const metadata = appointmentMetadata.get(appointment.id);
+    const oldSlotId = metadata.slotId;
+    metadata.slotId = slot.id;
+    for (const event of appointmentEvents.filter(
+      (item) => item.appointmentId === appointment.id,
+    )) {
+      if (event.previousSlotId === oldSlotId) event.previousSlotId = slot.id;
+      if (event.newSlotId === oldSlotId) event.newSlotId = slot.id;
+    }
+    referencedAvailabilitySlots.add(slot.id);
+    if (["REQUESTED", "CONFIRMED"].includes(appointment.status))
+      occupiedAvailabilitySlots.add(slot.id);
+  }
+  for (const veterinarian of [veterinarians[0], veterinarians[3]]) {
+    for (let index = 0; index < 26; index += 1) {
+      const slot = newAvailabilitySlot(
+        veterinarian.id,
+        Date.parse(`${shiftedBusinessDate(3)}T13:00:00Z`) + index * 1_800_000,
+      );
+      if (index === 25) slot.status = "BLOCKED";
+      availabilitySlots.push(slot);
+      availabilityEvents.push(
+        availabilityEvent(slot, accounts[1].id, "CREATED"),
+      );
+    }
+  }
+  for (const day of [shiftedBusinessDate(1), shiftedBusinessDate(70)])
+    availabilitySlots.push(
+      newAvailabilitySlot(
+        veterinarians[0].id,
+        Date.parse(`${day}T00:30:00-05:00`),
+      ),
+    );
+  availabilitySlots.push(
+    newAvailabilitySlot(
+      veterinarians[0].id,
+      Date.parse(`${shiftedBusinessDate(1)}T19:30:00-05:00`),
+    ),
+  );
+}
+
+function releaseAppointmentSlot(appointment, slotId) {
+  if (
+    !appointmentRecords().some(
+      (item) =>
+        item.id !== appointment.id &&
+        ["REQUESTED", "CONFIRMED"].includes(item.status) &&
+        appointmentMetadata.get(item.id).slotId === slotId,
+    )
+  )
+    occupiedAvailabilitySlots.delete(slotId);
+}
+
+function strictAgreementInstant(value) {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+      value,
+    )
+  )
+    return false;
+  const offset = /([+-])(\d{2}):(\d{2})$/.exec(value);
+  if (
+    offset &&
+    (Number(offset[2]) > 18 ||
+      (Number(offset[2]) === 18 && Number(offset[3]) !== 0))
+  )
+    return false;
+  return (
+    Number.isFinite(Date.parse(value)) &&
+    new Date(`${value.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) ===
+      value.slice(0, 10)
+  );
+}
+
+function canonicalAgreementInstant(value) {
+  if (value === undefined || value === null) return null;
+  const fraction = /\.(\d+)(?=Z|[+-]\d{2}:\d{2}$)/.exec(value)?.[1] ?? "";
+  const seconds =
+    Date.parse(value.replace(/\.\d+(?=Z|[+-]\d{2}:\d{2}$)/, "")) / 1000;
+  return `${seconds}:${fraction.padEnd(9, "0")}`;
+}
+
+async function handleAppointmentMove(
+  response,
+  bodyPromise,
+  appointmentId,
+  operation,
+  user,
+) {
+  const fail = (status, code, message) =>
+    problem(response, status, code, message);
+  if (
+    user.role !== "ADMINISTRATOR" ||
+    !user.permissions.includes("APPOINTMENT_MANAGE")
+  )
+    return fail(403, "ACCESS_DENIED", "El rol no permite cambiar esta cita.");
+  const body = await bodyPromise;
+  if (
+    !objectWithFields(body, [
+      "clientRequestId",
+      "availabilitySlotId",
+      "expectedAvailabilitySlotVersion",
+      "expectedVersion",
+      "reason",
+      "agreementChannel",
+      "agreementContactedAt",
+      "agreementNote",
+    ])
+  )
+    return fail(
+      400,
+      "UNKNOWN_PROPERTY",
+      "La estructura del cambio no es válida.",
+    );
+  const uuid = (value) =>
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value,
+    );
+  const reason =
+    typeof body.reason === "string"
+      ? normalizedAppointmentReason(body.reason)
+      : null;
+  if (
+    !uuid(body.clientRequestId) ||
+    !uuid(body.availabilitySlotId) ||
+    !Number.isSafeInteger(body.expectedVersion) ||
+    body.expectedVersion < 0 ||
+    !Number.isSafeInteger(body.expectedAvailabilitySlotVersion) ||
+    body.expectedAvailabilitySlotVersion < 0 ||
+    !reason ||
+    body.reason.length > 1000 ||
+    (body.agreementNote !== undefined &&
+      body.agreementNote !== null &&
+      (typeof body.agreementNote !== "string" ||
+        body.agreementNote.length > 500)) ||
+    (body.agreementChannel !== undefined &&
+      body.agreementChannel !== null &&
+      !["PHONE", "WHATSAPP", "OTHER"].includes(body.agreementChannel))
+  )
+    return fail(
+      400,
+      "VALIDATION_FAILED",
+      "Revisa destino, versiones, motivo y acuerdo.",
+    );
+  if (
+    body.agreementContactedAt !== undefined &&
+    body.agreementContactedAt !== null &&
+    !strictAgreementInstant(body.agreementContactedAt)
+  )
+    return fail(
+      400,
+      "TYPE_MISMATCH",
+      "La fecha de contacto necesita un texto ISO 8601 con offset.",
+    );
+  const agreementShape = () =>
+    ["PHONE", "WHATSAPP", "OTHER"].includes(body.agreementChannel) &&
+    strictAgreementInstant(body.agreementContactedAt) &&
+    typeof body.agreementNote === "string" &&
+    !!normalizedAppointmentReason(body.agreementNote) &&
+    body.agreementNote.length <= 500;
+  if (operation === "RESCHEDULING" && !agreementShape())
+    return fail(
+      400,
+      "VALIDATION_FAILED",
+      "Registra el acuerdo previo completo.",
+    );
+  if (
+    operation === "RESCHEDULING" &&
+    Date.parse(body.agreementContactedAt) > Date.now()
+  )
+    return fail(
+      400,
+      "INVALID_APPOINTMENT_REQUEST",
+      "El contacto no puede ser futuro.",
+    );
+  const appointment = appointmentRecords().find(
+    (item) => item.id === appointmentId,
+  );
+  if (!appointment)
+    return fail(404, "APPOINTMENT_NOT_FOUND", "La cita no existe.");
+  const metadata = appointmentMetadata.get(appointment.id);
+  const fingerprint = JSON.stringify([
+    ...(operation === "RESCHEDULING" ? [user.id] : []),
+    body.availabilitySlotId.toLowerCase(),
+    body.expectedAvailabilitySlotVersion,
+    body.expectedVersion,
+    reason,
+    body.agreementChannel ?? null,
+    canonicalAgreementInstant(body.agreementContactedAt),
+    body.agreementNote === null || body.agreementNote === undefined
+      ? ""
+      : (normalizedAppointmentReason(body.agreementNote) ?? ""),
+  ]);
+  const operationKey = operation + ":" + body.clientRequestId.toLowerCase();
+  const previous = metadata.moveOperations.get(operationKey);
+  if (previous !== undefined) {
+    if (previous !== fingerprint)
+      return fail(
+        409,
+        "APPOINTMENT_IDEMPOTENCY_CONFLICT",
+        "La clave ya identifica otra intención de cambio.",
+      );
+    return mutationResponse(response, 200, structuredClone(appointment));
+  }
+  if (appointment.version !== body.expectedVersion)
+    return fail(
+      409,
+      "CONCURRENT_UPDATE",
+      "La cita cambió; consulta su estado actual.",
+    );
+  if (!["REQUESTED", "CONFIRMED"].includes(appointment.status))
+    return fail(
+      409,
+      "APPOINTMENT_TRANSITION_NOT_ALLOWED",
+      "La cita es terminal.",
+    );
+  const now = Date.now();
+  const originalVeterinarian = users.get(appointment.veterinarianId);
+  const owner = users.get(appointment.ownerId);
+  const pet = pets.find((item) => item.id === appointment.petId);
+  if (
+    operation === "RESCHEDULING" &&
+    appointment.assignmentStatus !== "ASSIGNED"
+  )
+    return fail(
+      409,
+      "APPOINTMENT_REASSIGNMENT_REQUIRED",
+      "Resuelve la falta de veterinario mediante una reasignación.",
+    );
+  if (operation === "REASSIGNMENT") {
+    if (Date.parse(appointment.endsAt) <= now)
+      return fail(409, "APPOINTMENT_ALREADY_ENDED", "La cita ya terminó.");
+    if (
+      appointment.assignmentStatus !== "NEEDS_REASSIGNMENT" ||
+      originalVeterinarian?.status === "ACTIVE" ||
+      originalVeterinarian?.role !== "VETERINARIAN"
+    )
+      return fail(
+        409,
+        "APPOINTMENT_REASSIGNMENT_NOT_REQUIRED",
+        "La cita no requiere reemplazar a un veterinario inactivo.",
+      );
+  }
+  if (
+    metadata.participantInactive ||
+    owner?.status !== "ACTIVE" ||
+    owner?.role !== "OWNER" ||
+    !pet?.active ||
+    pet.ownerId !== appointment.ownerId
+  )
+    return fail(
+      409,
+      "APPOINTMENT_PARTICIPANT_INACTIVE",
+      "El propietario o la mascota ya no están activos.",
+    );
+  if (operation === "RESCHEDULING" && originalVeterinarian?.status !== "ACTIVE")
+    return fail(
+      409,
+      "APPOINTMENT_VETERINARIAN_INACTIVE",
+      "El veterinario original ya no está activo.",
+    );
+  const destination = availabilitySlots.find(
+    (slot) => slot.id.toLowerCase() === body.availabilitySlotId.toLowerCase(),
+  );
+  if (!destination)
+    return fail(
+      409,
+      "APPOINTMENT_SLOT_NOT_AVAILABLE",
+      "El turno de destino no está disponible.",
+    );
+  if (destination.version !== body.expectedAvailabilitySlotVersion)
+    return fail(409, "CONCURRENT_UPDATE", "El turno seleccionado cambió.");
+  if (users.get(destination.veterinarianId)?.status !== "ACTIVE")
+    return fail(
+      409,
+      "APPOINTMENT_VETERINARIAN_INACTIVE",
+      "El veterinario de destino ya no está activo.",
+    );
+  if (operation === "RESCHEDULING" && Date.parse(appointment.startsAt) <= now)
+    return fail(409, "APPOINTMENT_ALREADY_STARTED", "La cita ya comenzó.");
+  if (appointment.status === "REQUESTED" && now >= metadata.cutoffAt)
+    return fail(
+      409,
+      "APPOINTMENT_CONFIRMATION_CUTOFF_PASSED",
+      "La solicitud llegó a su corte persistido.",
+    );
+  if (
+    destination.id === metadata.slotId ||
+    destination.status !== "PUBLISHED" ||
+    (operation === "REASSIGNMENT" && Date.parse(destination.startsAt) <= now)
+  )
+    return fail(
+      409,
+      "APPOINTMENT_DESTINATION_NOT_AVAILABLE",
+      "El destino no permite aplicar el cambio.",
+    );
+  const destinationDay = businessDate(Date.parse(destination.startsAt));
+  if (
+    (operation === "RESCHEDULING" &&
+      (destinationDay < shiftedBusinessDate(1) ||
+        destinationDay > shiftedBusinessDate(60))) ||
+    (operation === "REASSIGNMENT" &&
+      appointment.status === "REQUESTED" &&
+      destinationDay < shiftedBusinessDate(1))
+  )
+    return fail(
+      409,
+      "APPOINTMENT_OUTSIDE_REQUEST_WINDOW",
+      "La fecha de destino está fuera de la ventana permitida.",
+    );
+  if (occupiedAvailabilitySlots.has(destination.id))
+    return fail(
+      409,
+      "APPOINTMENT_SLOT_OCCUPIED",
+      "Otra cita ocupa el destino.",
+    );
+  if (
+    appointmentRecords().some(
+      (item) =>
+        item.id !== appointment.id &&
+        item.petId === appointment.petId &&
+        ["REQUESTED", "CONFIRMED"].includes(item.status) &&
+        Date.parse(item.startsAt) === Date.parse(destination.startsAt),
+    )
+  )
+    return fail(
+      409,
+      "APPOINTMENT_PET_ALREADY_SCHEDULED",
+      "La mascota ya tiene una cita en ese horario.",
+    );
+  const timeChanged =
+    Date.parse(destination.startsAt) !== Date.parse(appointment.startsAt);
+  if (
+    operation === "REASSIGNMENT" &&
+    timeChanged &&
+    (!agreementShape() || Date.parse(body.agreementContactedAt) > now)
+  )
+    return fail(
+      400,
+      "INVALID_APPOINTMENT_REQUEST",
+      "Registra el acuerdo previo para cambiar el horario.",
+    );
+  const cutoffAt =
+    appointment.status === "REQUESTED"
+      ? Date.parse(`${destinationDay}T06:00:00-05:00`)
+      : metadata.cutoffAt;
+  if (appointment.status === "REQUESTED" && now >= cutoffAt)
+    return fail(
+      409,
+      "APPOINTMENT_CONFIRMATION_CUTOFF_PASSED",
+      "El destino alcanzó su corte.",
+    );
+  const previousSlotId = metadata.slotId;
+  const previousAssignment = appointment.assignmentStatus;
+  releaseAppointmentSlot(appointment, previousSlotId);
+  metadata.slotId = destination.id;
+  metadata.cutoffAt = cutoffAt;
+  appointment.veterinarianId = destination.veterinarianId;
+  appointment.veterinarianFullName = veterinarians.find(
+    (item) => item.id === destination.veterinarianId,
+  ).fullName;
+  appointment.startsAt = destination.startsAt;
+  appointment.endsAt = destination.endsAt;
+  appointment.assignmentStatus = "ASSIGNED";
+  appointment.version += 1;
+  appointment.updatedAt = new Date().toISOString();
+  occupiedAvailabilitySlots.add(destination.id);
+  referencedAvailabilitySlots.add(destination.id);
+  const event = appointmentEvent(
+    appointment,
+    operation === "RESCHEDULING" ? "RESCHEDULED" : "REASSIGNED",
+    user.id,
+    appointment.status,
+    reason,
+  );
+  event.previousSlotId = previousSlotId;
+  event.previousAssignmentStatus = previousAssignment;
+  appointmentEvents.push(event);
+  metadata.moveOperations.set(operationKey, fingerprint);
+  return mutationResponse(response, 200, structuredClone(appointment));
+}
+
 async function handleAppointments(
   request,
   response,
@@ -529,7 +933,9 @@ async function handleAppointments(
   session,
 ) {
   const match =
-    /^\/api\/v1\/appointments(?:\/([^/]+)(?:\/(status|events))?)?$/.exec(path);
+    /^\/api\/v1\/appointments(?:\/([^/]+)(?:\/(status|events|reschedulings|veterinarian-reassignments))?)?$/.exec(
+      path,
+    );
   if (!match) return false;
   const user = session.user;
   const method = request.method;
@@ -541,6 +947,19 @@ async function handleAppointments(
       "ACCESS_DENIED",
       "El rol no permite esta operación.",
     );
+  if (
+    method === "POST" &&
+    ["reschedulings", "veterinarian-reassignments"].includes(match[2])
+  ) {
+    await handleAppointmentMove(
+      response,
+      bodyPromise,
+      match[1],
+      match[2] === "reschedulings" ? "RESCHEDULING" : "REASSIGNMENT",
+      user,
+    );
+    return true;
+  }
   if (method === "PATCH" && match[2] === "status") {
     if (
       user.role !== "ADMINISTRATOR" ||
@@ -601,16 +1020,9 @@ async function handleAppointments(
       );
       return true;
     }
-    if (["CANCELLED", "NO_SHOW"].includes(body.status)) {
-      problem(
-        response,
-        501,
-        "SIMULATION_ENDPOINT_NOT_MODELED",
-        "Este incremento solo modela confirmar y rechazar solicitudes.",
-      );
-      return true;
-    }
-    if (!["CONFIRMED", "REJECTED"].includes(body.status)) {
+    if (
+      !["CONFIRMED", "REJECTED", "CANCELLED", "NO_SHOW"].includes(body.status)
+    ) {
       problem(
         response,
         409,
@@ -620,7 +1032,7 @@ async function handleAppointments(
       return true;
     }
     const reason = normalizedAppointmentReason(body.reason);
-    if (body.status === "REJECTED" && !reason) {
+    if (body.status !== "CONFIRMED" && !reason) {
       problem(
         response,
         400,
@@ -656,12 +1068,42 @@ async function handleAppointments(
       );
       return true;
     }
-    if (appointment.status !== "REQUESTED") {
+    const allowed =
+      body.status === "CANCELLED"
+        ? ["REQUESTED", "CONFIRMED"].includes(appointment.status)
+        : body.status === "NO_SHOW"
+          ? appointment.status === "CONFIRMED"
+          : appointment.status === "REQUESTED";
+    if (!allowed) {
       problem(
         response,
         409,
         "APPOINTMENT_TRANSITION_NOT_ALLOWED",
         "La solicitud ya cambió de estado.",
+      );
+      return true;
+    }
+    if (
+      body.status === "CANCELLED" &&
+      Date.parse(appointment.startsAt) <= Date.now()
+    ) {
+      problem(
+        response,
+        409,
+        "APPOINTMENT_ALREADY_STARTED",
+        "La cita ya comenzó.",
+      );
+      return true;
+    }
+    if (
+      body.status === "NO_SHOW" &&
+      Date.parse(appointment.endsAt) > Date.now()
+    ) {
+      problem(
+        response,
+        409,
+        "APPOINTMENT_NOT_ENDED",
+        "La cita todavía no terminó.",
       );
       return true;
     }
@@ -716,6 +1158,8 @@ async function handleAppointments(
         reason,
       ),
     );
+    if (["REJECTED", "CANCELLED", "NO_SHOW"].includes(body.status))
+      releaseAppointmentSlot(appointment, metadata.slotId);
     await mutationResponse(response, 200, structuredClone(appointment));
     return true;
   }
@@ -2024,6 +2468,49 @@ async function handle(request, response, bodyPromise) {
   if (method === "POST" && url.pathname === "/__simulation/fixture") {
     const body = await bodyPromise;
     const user = [...users.values()].find((item) => item.email === body.email);
+    if (body.action === "prepare-appointment-changes") {
+      prepareAppointmentChanges();
+      return send(response, 204);
+    }
+    if (body.action === "appointment-veterinarian-unavailable") {
+      const appointment = appointmentRecords().find(
+        (item) => item.id === body.appointmentId,
+      );
+      if (!appointment)
+        return problem(
+          response,
+          404,
+          "SIMULATION_FIXTURE_NOT_FOUND",
+          "No existe la cita ficticia.",
+        );
+      const veterinarian = veterinarians.find(
+        (item) => item.id === appointment.veterinarianId,
+      );
+      changeRecordStatus(veterinarian, users.get(veterinarian.id), "DISABLED");
+      for (const item of appointmentRecords().filter(
+        (entry) =>
+          entry.veterinarianId === veterinarian.id &&
+          ["REQUESTED", "CONFIRMED"].includes(entry.status) &&
+          Date.parse(entry.endsAt) > Date.now(),
+      )) {
+        if (item.assignmentStatus !== "NEEDS_REASSIGNMENT") {
+          const previousAssignment = item.assignmentStatus;
+          item.assignmentStatus = "NEEDS_REASSIGNMENT";
+          item.version += 1;
+          item.updatedAt = new Date().toISOString();
+          const event = appointmentEvent(
+            item,
+            "VETERINARIAN_DISABLED",
+            null,
+            item.status,
+            "Veterinario no disponible en la simulación",
+          );
+          event.previousAssignmentStatus = previousAssignment;
+          appointmentEvents.push(event);
+        }
+      }
+      return send(response, 204);
+    }
     if (body.action === "appointment-state") {
       const appointment = appointmentRecords().find(
         (item) => item.id === body.appointmentId,
@@ -2036,6 +2523,22 @@ async function handle(request, response, bodyPromise) {
           "No existe la cita ficticia.",
         );
       const metadata = appointmentMetadata.get(appointment.id);
+      if (["STARTED", "ENDED"].includes(body.timing)) {
+        const start =
+          body.timing === "ENDED"
+            ? Date.parse(`${shiftedBusinessDate(-1)}T14:00:00Z`)
+            : Math.floor(Date.now() / 1_800_000) * 1_800_000;
+        appointment.startsAt = new Date(start).toISOString();
+        appointment.endsAt = new Date(start + 1_800_000).toISOString();
+        metadata.cutoffAt = Date.parse(`${businessDate(start)}T06:00:00-05:00`);
+        const slot = availabilitySlots.find(
+          (item) => item.id === metadata.slotId,
+        );
+        if (slot) {
+          slot.startsAt = appointment.startsAt;
+          slot.endsAt = appointment.endsAt;
+        }
+      }
       if (typeof body.cutoffPassed === "boolean")
         metadata.cutoffAt = body.cutoffPassed
           ? Date.now() - 1000
@@ -2562,7 +3065,9 @@ async function handle(request, response, bodyPromise) {
     /^\/api\/v1\/veterinarians\/[^/]+\/availability-slots(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(
       path,
     ) ||
-    /^\/api\/v1\/appointments(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(path);
+    /^\/api\/v1\/appointments(?:\/[^/]+(?:\/(?:status|events|reschedulings|veterinarian-reassignments))?)?$/.test(
+      path,
+    );
   if (!modeled)
     return problem(
       response,

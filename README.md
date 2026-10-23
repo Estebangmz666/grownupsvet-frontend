@@ -16,12 +16,12 @@ correo. El backend autoriza cada operación.
 
 ## Alcance implementado
 
-| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                           |
-| --------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                          |
-| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                  |
-| `ADMINISTRATOR` | Administración  | Gestión de veterinarios y disponibilidad; agenda, detalle e historial de citas y confirmación/rechazo de solicitudes según permisos. |
-| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                     |
+| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                   |
+| --------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                                  |
+| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                          |
+| `ADMINISTRATOR` | Administración  | Gestión de veterinarios y disponibilidad; agenda e historial de citas, decisiones, reprogramación y reemplazo de veterinario según permisos. |
+| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                             |
 
 El acceso público incluye login, registro de propietarios, recuperación de
 contraseña en tres pasos y activación de personal mediante invitación. Login,
@@ -87,7 +87,37 @@ conflicto o respuesta incierta exige consultar detalle e historial antes de
 otra decisión. No se reenvía automáticamente el cambio ni se atribuye a un
 intento previo el estado observado después.
 
+Desde el detalle también puede cancelar una solicitud o cita confirmada
+antes de su inicio, y registrar inasistencia de una confirmada al terminar
+el turno. Ambas decisiones requieren motivo y confirmación; conservan la
+cita y su historial, y no reabren estados terminales.
+
+La reprogramación normal ofrece veterinarios activos y sus turnos publicados
+por rangos de hasta 31 fechas y páginas de 20. Los candidatos no acreditan
+capacidad libre: el servidor comprueba la ocupación al registrar el cambio.
+El destino normal debe estar entre mañana y el día 60. Para citas que necesitan
+reemplazo por un veterinario inactivo existe una reasignación excepcional,
+posible hasta el fin original; sus reglas de destino difieren de la
+reprogramación normal y no imponen ese máximo de 60 días.
+
+El cambio de horario requiere constancia del acuerdo previo: canal, fecha,
+hora de Bogotá y nota. Reprogramar siempre requiere acuerdo; reemplazar al
+veterinario conservando el horario no lo exige. La interfaz convierte la fecha
+y hora al contrato del servidor y conserva en memoria la intención enviada.
+Una respuesta incierta bloquea otro envío y orienta a consultar el estado
+actual y el historial. Un replay idempotente puede devolver una programación
+posterior; no se presenta el destino inicialmente seleccionado como vigente
+sin comprobar la respuesta.
+
 ## Validación y pendientes
+
+La [verificación de cambios de citas del 23/10/2026](docs/verificacion-cambios-citas-2026-10-23.md)
+registra **626 pruebas en 42 archivos**, tipos, lint y exportación web correctos.
+Incluye 71 peticiones de contrato (56 respuestas con esquema), 16 comprobaciones
+del cliente real mediante 114 peticiones y recorridos locales de las cuatro
+operaciones, conflicto de ocupación y respuesta perdida. Se verificaron
+paginación, acuerdo con hora de Bogotá, permisos de consulta y diálogo móvil
+por teclado. La simulación no acredita transacciones ni correo del servicio real.
 
 La [verificación de citas administrativas del 23/10/2026](docs/verificacion-citas-administrativas-2026-10-23.md)
 registra **552 pruebas en 40 archivos**, tipos, lint y exportación web correctos.
@@ -131,8 +161,7 @@ aceptación del servicio real. Continúan pendientes:
 - [Mejora de las plantillas de correo del backend](docs/pendientes-proyecto.md),
   pendiente recordado por el usuario el 23/10/2026.
 
-No se incluyen cambios administrativos de horario, cancelación, inasistencia
-o reasignación de citas, cancelación/reprogramación por el propietario, atención clínica,
+No se incluyen cancelación/reprogramación por el propietario, atención clínica,
 títulos adicionales ni archivos de diplomas. La agenda del rol veterinario
 es de consulta.
 

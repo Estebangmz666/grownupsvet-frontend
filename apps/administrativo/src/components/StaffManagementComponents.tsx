@@ -1,5 +1,12 @@
 import React, { useEffect, useId, useState } from "react";
-import { Modal, Platform, Text, TextInput, View } from "react-native";
+import {
+  Modal,
+  Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { StaffButton } from "./StaffComponents";
 import { staffStyles as styles } from "../staffStyles";
 
@@ -156,7 +163,7 @@ export function StaffConfirmationDialog({
         onCancel();
       }
       if (event.key === "Tab") {
-        const first = document.getElementById(`${id}-cancel`);
+        const first = document.getElementById(`${id}-message-scroll`);
         const last = document.getElementById(`${id}-confirm`);
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
@@ -192,9 +199,16 @@ export function StaffConfirmationDialog({
           <Text nativeID={`${id}-title`} style={styles.cardTitle}>
             {title}
           </Text>
-          <Text nativeID={`${id}-message`} style={styles.description}>
-            {message}
-          </Text>
+          <ScrollView
+            nativeID={`${id}-message-scroll`}
+            tabIndex={0}
+            accessibilityLabel="Contenido de la confirmación"
+            style={{ flexShrink: 1 }}
+          >
+            <Text nativeID={`${id}-message`} style={styles.description}>
+              {message}
+            </Text>
+          </ScrollView>
           <View style={styles.controls}>
             <StaffButton
               nativeID={`${id}-cancel`}

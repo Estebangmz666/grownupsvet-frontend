@@ -138,6 +138,7 @@ export const staffStyles = StyleSheet.create({
   dialogCard: {
     width: "100%",
     maxWidth: 560,
+    maxHeight: "90%",
     padding: spacing.xl,
     gap: spacing.lg,
     borderRadius: radius.md,

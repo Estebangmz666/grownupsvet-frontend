@@ -9,12 +9,20 @@ import {
 } from "./client";
 import type {
   AdministrativeAppointmentEventResponseDTO,
+  AdministrativeAppointmentDestinationSlotResponseDTO,
   AdministrativeAppointmentResponseDTO,
+  ListAdministrativeAppointmentDestinationSlotsParams,
   ListAdministrativeAppointmentEventsParams,
   ListAdministrativeAppointmentsParams,
+  ReassignAdministrativeAppointmentVeterinarianRequestDTO,
+  RescheduleAdministrativeAppointmentRequestDTO,
   UpdateAdministrativeAppointmentStatusRequestDTO,
 } from "./administrativeAppointments.types";
 import type { AppointmentStatus, Page } from "./types";
+import {
+  listVeterinarianAvailabilitySlots,
+  parseVeterinarianAvailabilitySlotResponse,
+} from "./veterinarianAvailability.api";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const statuses = new Set([
@@ -132,6 +140,19 @@ function isInstant(value: unknown): value is string {
   } catch {
     return false;
   }
+}
+
+/** Java OffsetDateTime supports offsets through ±18:00; contact must not be future. */
+export function isAdministrativeAppointmentAgreementContactedAt(
+  value: unknown,
+  now = Date.now(),
+): value is string {
+  if (!Number.isFinite(now) || !isInstant(value) || Date.parse(value) > now)
+    return false;
+  const offset = /[+-](\d{2}):(\d{2})$/.exec(value);
+  return (
+    offset === null || Number(offset[1]) * 60 + Number(offset[2]) <= 18 * 60
+  );
 }
 
 function appointmentPath(appointmentId?: string): string {
@@ -398,18 +419,18 @@ export async function updateAdministrativeAppointmentStatus(
 ): Promise<AdministrativeAppointmentResponseDTO> {
   const path = appointmentPath(appointmentId);
   if (
-    !["CONFIRMED", "REJECTED"].includes(input.status) ||
+    !["CONFIRMED", "REJECTED", "CANCELLED", "NO_SHOW"].includes(input.status) ||
     !isInteger(input.expectedVersion) ||
     input.expectedVersion >= Number.MAX_SAFE_INTEGER ||
     (input.reason !== undefined &&
       input.reason !== null &&
       !isText(input.reason, 1000)) ||
-    (input.status === "REJECTED" &&
+    (input.status !== "CONFIRMED" &&
       (typeof input.reason !== "string" ||
         !normalizeAppointmentReviewReason(input.reason)))
   )
     throw new RangeError(
-      "Indica una decisión válida, la versión observada y un motivo de hasta 1000 caracteres al rechazar.",
+      "Indica una decisión válida, la versión observada y un motivo de hasta 1000 caracteres salvo al confirmar.",
     );
   const body: UpdateAdministrativeAppointmentStatusRequestDTO = {
     status: input.status,
@@ -434,6 +455,150 @@ export async function updateAdministrativeAppointmentStatus(
   )
     throw new Error(
       "La respuesta no confirma la decisión y versión solicitadas para la cita.",
+    );
+  return result;
+}
+
+function normalizeAppointmentDestinationRequest(
+  input: ReassignAdministrativeAppointmentVeterinarianRequestDTO,
+  agreementRequired: boolean,
+): ReassignAdministrativeAppointmentVeterinarianRequestDTO {
+  if (
+    !isUuid(input.clientRequestId) ||
+    !isUuid(input.availabilitySlotId) ||
+    !isInteger(input.expectedAvailabilitySlotVersion) ||
+    !isInteger(input.expectedVersion) ||
+    input.expectedVersion >= Number.MAX_SAFE_INTEGER ||
+    !isText(input.reason, 1000) ||
+    !normalizeAppointmentReviewReason(input.reason)
+  )
+    throw new RangeError(
+      "Indica la clave de la operación, el turno y sus versiones observadas, con un motivo de hasta 1000 caracteres.",
+    );
+  const channel = input.agreementChannel;
+  const contactedAt = input.agreementContactedAt;
+  const note = input.agreementNote;
+  if (
+    (channel !== undefined &&
+      channel !== null &&
+      !["PHONE", "WHATSAPP", "OTHER"].includes(channel)) ||
+    (contactedAt !== undefined &&
+      contactedAt !== null &&
+      !isAdministrativeAppointmentAgreementContactedAt(contactedAt)) ||
+    (note !== undefined && note !== null && !isText(note, 500)) ||
+    (agreementRequired &&
+      (channel === undefined ||
+        channel === null ||
+        contactedAt === undefined ||
+        contactedAt === null ||
+        typeof note !== "string" ||
+        !normalizeAppointmentReviewReason(note)))
+  )
+    throw new RangeError(
+      "Revisa el canal, la fecha con zona horaria no futura y la constancia del acuerdo de hasta 500 caracteres.",
+    );
+  const body: ReassignAdministrativeAppointmentVeterinarianRequestDTO = {
+    clientRequestId: input.clientRequestId,
+    availabilitySlotId: input.availabilitySlotId,
+    expectedAvailabilitySlotVersion: input.expectedAvailabilitySlotVersion,
+    expectedVersion: input.expectedVersion,
+    reason: normalizeAppointmentReviewReason(input.reason),
+  };
+  if (channel !== undefined) body.agreementChannel = channel;
+  if (contactedAt !== undefined) body.agreementContactedAt = contactedAt;
+  if (note !== undefined)
+    body.agreementNote =
+      note === null ? null : normalizeAppointmentReviewReason(note);
+  return body;
+}
+
+/** An idempotent replay returns the current appointment, including subsequent changes. */
+export async function rescheduleAdministrativeAppointment(
+  appointmentId: string,
+  input: RescheduleAdministrativeAppointmentRequestDTO,
+  context?: ApiRequestContext,
+): Promise<AdministrativeAppointmentResponseDTO> {
+  const path = appointmentPath(appointmentId);
+  const body = normalizeAppointmentDestinationRequest(input, true);
+  return parseAdministrativeAppointmentResponse(
+    await requestAdministrativeJson(
+      `${path}/reschedulings`,
+      { method: "POST", body: JSON.stringify(body) },
+      context,
+    ),
+    appointmentId,
+  );
+}
+
+/** Agreement is validated when supplied; the caller knows whether the original time changes. */
+export async function reassignAdministrativeAppointmentVeterinarian(
+  appointmentId: string,
+  input: ReassignAdministrativeAppointmentVeterinarianRequestDTO,
+  context?: ApiRequestContext,
+): Promise<AdministrativeAppointmentResponseDTO> {
+  const path = appointmentPath(appointmentId);
+  const body = normalizeAppointmentDestinationRequest(input, false);
+  return parseAdministrativeAppointmentResponse(
+    await requestAdministrativeJson(
+      `${path}/veterinarian-reassignments`,
+      { method: "POST", body: JSON.stringify(body) },
+      context,
+    ),
+    appointmentId,
+  );
+}
+
+export async function listAdministrativeAppointmentDestinationSlots(
+  veterinarianId: string,
+  params: ListAdministrativeAppointmentDestinationSlotsParams,
+  context?: ApiRequestContext,
+): Promise<Page<AdministrativeAppointmentDestinationSlotResponseDTO>> {
+  const captured = context ?? getApiRequestContext();
+  const page = await listVeterinarianAvailabilitySlots(
+    veterinarianId,
+    { ...params, status: "PUBLISHED" },
+    captured,
+  );
+  if (!isApiRequestContextCurrent(captured))
+    throw new StaleSessionRequestError();
+  const result = parsePage(
+    page,
+    (value) => {
+      const slot = parseVeterinarianAvailabilitySlotResponse(
+        value,
+        veterinarianId,
+      );
+      if (
+        !hasExactFields(slot as unknown as Record<string, unknown>, [
+          "id",
+          "veterinarianId",
+          "startsAt",
+          "endsAt",
+          "status",
+          "version",
+          "timeZone",
+        ]) ||
+        slot.status !== "PUBLISHED"
+      )
+        throw new Error(
+          "La respuesta no corresponde a un turno publicado de esta agenda.",
+        );
+      return slot;
+    },
+    params.page,
+    params.size,
+  );
+  const from = Date.parse(`${params.from}T00:00:00-05:00`);
+  const through = Date.parse(`${params.to}T00:00:00-05:00`) + 86_400_000;
+  if (
+    result.items.some(
+      (slot) =>
+        Date.parse(slot.startsAt) < from ||
+        Date.parse(slot.startsAt) >= through,
+    )
+  )
+    throw new Error(
+      "Los turnos publicados no corresponden al rango solicitado.",
     );
   return result;
 }

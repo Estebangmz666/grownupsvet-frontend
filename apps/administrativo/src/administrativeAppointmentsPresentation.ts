@@ -7,7 +7,8 @@ import type {
   AuthenticatedUser,
 } from "@grownupsvet/api-client";
 
-export type AdministrativeAppointmentDecision = "CONFIRMED" | "REJECTED";
+export type AdministrativeAppointmentDecision =
+  "CONFIRMED" | "REJECTED" | "CANCELLED" | "NO_SHOW";
 
 export interface AdministrativeAppointmentQueryForm {
   from: string;
@@ -69,10 +70,11 @@ export function administrativeAppointmentEligibility(
 
 export function validateAdministrativeAppointmentReason(
   reason: string,
+  purpose = "del rechazo",
 ): string | undefined {
   if (reason.length > 1000) return "El motivo admite hasta 1000 caracteres.";
   if (!normalizeAppointmentReviewReason(reason))
-    return "Escribe el motivo del rechazo.";
+    return `Escribe el motivo ${purpose}.`;
   return undefined;
 }
 
@@ -89,9 +91,29 @@ const conflictMessages: Record<string, string> = {
   APPOINTMENT_CONFIRMATION_CUTOFF_PASSED:
     "El plazo de confirmación de esta solicitud ya terminó o el turno comenzó. Consulta el detalle y el historial actuales.",
   APPOINTMENT_PARTICIPANT_INACTIVE:
-    "El propietario, la mascota, el veterinario o el turno ya no cumplen las condiciones para confirmar. Consulta el detalle y el historial actuales.",
+    "El propietario, la mascota, el veterinario o el turno ya no cumplen las condiciones para realizar el cambio. Consulta el detalle y el historial actuales.",
   APPOINTMENT_TRANSITION_NOT_ALLOWED:
     "El estado actual de la cita no permite esta decisión. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_ALREADY_STARTED:
+    "La cita ya comenzó y no permite este cambio. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_NOT_ENDED:
+    "El turno todavía no terminó. La inasistencia se puede registrar desde su hora de finalización.",
+  APPOINTMENT_ALREADY_ENDED:
+    "El turno original ya terminó y no permite resolver la asignación. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_REASSIGNMENT_REQUIRED:
+    "Esta cita necesita resolver primero la falta de veterinario. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_REASSIGNMENT_NOT_REQUIRED:
+    "La cita ya no necesita reemplazar al veterinario. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_DESTINATION_NOT_AVAILABLE:
+    "El turno seleccionado ya no permite realizar el cambio. Consulta el detalle y el historial actuales antes de elegir otro.",
+  APPOINTMENT_SLOT_OCCUPIED:
+    "Otra cita ocupa el turno seleccionado. La operación no pudo usar ese destino. Consulta el detalle y el historial actuales.",
+  APPOINTMENT_PET_ALREADY_SCHEDULED:
+    "La mascota ya tiene otra cita en ese horario. Consulta el detalle y el historial actuales antes de elegir otro turno.",
+  APPOINTMENT_OUTSIDE_REQUEST_WINDOW:
+    "El destino no cumple el plazo permitido para este cambio. Consulta el detalle y el historial actuales antes de elegir otro.",
+  APPOINTMENT_IDEMPOTENCY_CONFLICT:
+    "La operación enviada no corresponde a la intención registrada anteriormente. Consulta el detalle y el historial actuales.",
 };
 
 export function administrativeAppointmentOperationError(

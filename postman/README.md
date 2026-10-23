@@ -98,9 +98,9 @@ conservan su ámbito propio o asignado; el superadministrador no hereda acceso.
 `GET /appointments/{id}` y `GET /appointments/{id}/events?page=0&size=20`
 devuelven el contrato completo sin correo del propietario. El cambio usa
 `PATCH /appointments/{id}/status` con `status`, `expectedVersion` y `reason`
-opcional al confirmar, obligatorio al rechazar. Los únicos cambios modelados
-en este incremento son `CONFIRMED` y `REJECTED`; cancelación, inasistencia,
-reprogramación, reasignación y creación de citas siguen sin modelarse.
+opcional al confirmar, obligatorio para las demás decisiones. El alcance de
+revisión original (`CONFIRMED` y `REJECTED`) se amplió con los cambios descritos
+en el apartado siguiente; la creación de citas sigue sin modelarse.
 
 Solo en la simulación, la fixture `appointment-state` permite seleccionar una
 cita mediante `appointmentId` e inyectar `advanceVersion`, `cutoffPassed` o
@@ -111,9 +111,10 @@ en el producto y no se incluyen en el bundle web.
 El corte del sustituto usa las 06:00 de Bogotá de la fecha de la cita y puede
 alterarse mediante la fixture. No demuestra la configuración, persistencia
 ni ejecución del scheduler real. El frontend no recibe ni calcula ese corte.
-Los identificadores de turno del historial ficticio no enlazan con los turnos
-de disponibilidad del sustituto: estas pruebas no acreditan liberación de
-capacidad, transacciones, bloqueos, carreras SQL ni avisos de correo.
+En la revisión original, sin activar la fixture de cambios, los identificadores
+de turno del historial ficticio no enlazan con disponibilidad. La fixture nueva
+los enlaza solo dentro del sustituto en memoria. Ninguno de estos recorridos
+acredita transacciones, bloqueos, carreras SQL ni avisos de correo.
 
 La cuenta `read-only-administrator@roles.test` es una fixture de permisos con
 solo `APPOINTMENT_READ_ALL`. Permite comprobar navegación de consulta y
@@ -136,6 +137,40 @@ respuestas perdidas/vacías/malformadas/408 después de escribir, sin sustituir
 `fetch` ni reenviar automáticamente una decisión. Los informes saneados se
 guardan en `postman/.runtime/administrative-appointments-http.json` y
 `postman/.runtime/administrative-appointments-client-http.json`.
+
+## Cambios administrativos de citas
+
+El contrato local también modela `CANCELLED`, `NO_SHOW`,
+`POST /appointments/{id}/reschedulings` y
+`POST /appointments/{id}/veterinarian-reassignments`. Conserva sus diferencias
+de plazos, acuerdo, versiones y replay. Reprogramar usa una intención que
+incluye al actor; el fingerprint de reasignación del servicio actual no lo
+incluye. Ambos replays devuelven la cita actual, incluso si cambió después.
+
+Solo para este recorrido, `prepare-appointment-changes` enlaza las citas
+ficticias con turnos del sustituto y añade 25 candidatos publicados y uno
+bloqueado por veterinario en el día +3, además de destinos de prueba para
+reemplazo a la misma hora y más allá de 60 días. La ocupación y su liberación
+se modelan en memoria, sin acreditar las transacciones del backend.
+`appointment-veterinarian-unavailable` deshabilita el profesional original
+y marca las citas activas para reemplazo. `appointment-state` admite
+`timing: ENDED` o `STARTED` para los escenarios temporales ficticios.
+
+Los destinos administrativos se consultan por veterinario con estado
+`PUBLISHED`, rango inclusivo de hasta 31 fechas y páginas de 20. No se usa
+`GET /availability-slots`, exclusivo del propietario, ni se presenta un
+candidato publicado como libre. El servidor vuelve a comprobar la ocupación.
+
+```powershell
+python postman/scripts/verify_appointment_changes_http.py `
+  --spec '..\GrownupsVet\grownupsvet-backend\docs\openapi\openapi.json'
+node postman/scripts/verify_appointment_changes_client_http.mjs
+```
+
+Ejecutar uno por vez, con la simulación iniciada y sin navegador que use esas
+agendas. Solo pueden dirigirse a HTTP local en el puerto 4900. El verificador
+del cliente compila el TypeScript de producción y usa `fetch` real, sin
+sustituir las respuestas. Sus informes saneados quedan en `.runtime/`.
 
 ## Iniciar y detener en Windows
 

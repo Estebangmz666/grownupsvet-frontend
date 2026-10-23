@@ -7,6 +7,7 @@ import {
 } from "@grownupsvet/accessibility-kit";
 import {
   getApiRequestContext,
+  type Appointment,
   type AppointmentStatus,
 } from "@grownupsvet/api-client";
 import { listAdministrativeAppointments } from "@api-client/administrativeAppointments.api";
@@ -14,6 +15,7 @@ import {
   validateAdministrativeAppointmentQuery,
   type AdministrativeAppointmentQueryErrors,
   type AdministrativeAppointmentQueryForm,
+  type AdministrativeAppointmentOperationError,
 } from "../administrativeAppointmentsPresentation";
 import { AdministrativeAppointmentFields } from "../components/AdministrativeAppointmentComponents";
 import { StaffButton, StaffPagination } from "../components/StaffComponents";
@@ -30,6 +32,8 @@ import {
 } from "../staffPresentation";
 import { staffStyles as styles } from "../staffStyles";
 import { AdministrativeAppointmentDetailsScreen } from "./AdministrativeAppointmentDetailsScreen";
+import { AdministrativeAppointmentMoveScreen } from "./AdministrativeAppointmentMoveScreen";
+import type { AdministrativeAppointmentMoveKind } from "../administrativeAppointmentChanges";
 
 const appointmentStatuses: Array<AppointmentStatus | undefined> = [
   undefined,
@@ -42,8 +46,10 @@ const appointmentStatuses: Array<AppointmentStatus | undefined> = [
 
 export function AdministrativeAppointmentsScreen({
   canManage,
+  canManageDestinations = false,
 }: {
   canManage: boolean;
+  canManageDestinations?: boolean;
 }) {
   const [applied, setApplied] = useState<
     AdministrativeAppointmentQueryForm & { page: number }
@@ -59,6 +65,15 @@ export function AdministrativeAppointmentsScreen({
   const [fieldErrors, setFieldErrors] =
     useState<AdministrativeAppointmentQueryErrors>({});
   const [appointmentId, setAppointmentId] = useState<string | null>(null);
+  const [move, setMove] = useState<{
+    appointment: Appointment;
+    kind: AdministrativeAppointmentMoveKind;
+  } | null>(null);
+  const [detailVisit, setDetailVisit] = useState(0);
+  const [detailNotice, setDetailNotice] = useState<{
+    message?: string;
+    failure?: AdministrativeAppointmentOperationError;
+  }>({});
   const { width } = useWindowDimensions();
   const load = useCallback(
     (signal: AbortSignal) =>
@@ -89,14 +104,40 @@ export function AdministrativeAppointmentsScreen({
   };
   const backToList = () => {
     setAppointmentId(null);
+    setDetailNotice({});
     result.retry();
   };
+  const showCurrentDetail = (
+    message?: string,
+    failure?: AdministrativeAppointmentOperationError,
+  ) => {
+    setMove(null);
+    setDetailNotice({ message, failure });
+    setDetailVisit((value) => value + 1);
+  };
+  if (move)
+    return (
+      <AdministrativeAppointmentMoveScreen
+        appointment={move.appointment}
+        kind={move.kind}
+        onConsult={(failure) => showCurrentDetail(undefined, failure)}
+        onCompleted={(message) => showCurrentDetail(message)}
+      />
+    );
   if (appointmentId) {
     return (
       <AdministrativeAppointmentDetailsScreen
-        key={appointmentId}
+        key={`${appointmentId}:${detailVisit}`}
         appointmentId={appointmentId}
         canManage={canManage}
+        canManageDestinations={canManageDestinations}
+        initialMessage={detailNotice.message}
+        initialFailure={detailNotice.failure}
+        onMove={
+          canManageDestinations
+            ? (kind, appointment) => setMove({ kind, appointment })
+            : undefined
+        }
         onBack={backToList}
       />
     );

@@ -5,6 +5,7 @@ import { AssignedAppointmentsScreen } from "./screens/AssignedAppointmentsScreen
 import { StaffAccountsScreen } from "./screens/StaffAccountsScreen";
 import { AdministrativeAppointmentsScreen } from "./screens/AdministrativeAppointmentsScreen";
 import { administrativeAppointmentPermissions } from "./administrativeAppointmentsPresentation";
+import { canManageAdministrativeAppointmentDestinations } from "./administrativeAppointmentChanges";
 import { StaffMutationActivityProvider } from "./hooks/StaffMutationActivity";
 import { useStaffMutationActivity } from "./hooks/staffMutationActivityContext";
 import {
@@ -78,6 +79,9 @@ function AdministratorPanels({
       ) : appointmentPermissions.canRead ? (
         <AdministrativeAppointmentsScreen
           canManage={appointmentPermissions.canManage}
+          canManageDestinations={canManageAdministrativeAppointmentDestinations(
+            user,
+          )}
         />
       ) : null}
     </View>
