@@ -32,6 +32,7 @@ import { StaffAccountFormScreen } from "./StaffAccountFormScreen";
 import { reconciledStaffPage } from "../staffManagement";
 import { StaffHeading } from "../components/StaffManagementComponents";
 import { VeterinarianAvailabilityScreen } from "./VeterinarianAvailabilityScreen";
+import { VeterinarianQualificationsScreen } from "./VeterinarianQualificationsScreen";
 
 type StaffAccount = AdministratorResponseDTO | VeterinarianResponseDTO;
 
@@ -52,6 +53,7 @@ export function StaffAccountsScreen({
     | { screen: "list" | "create" }
     | { screen: "details" | "edit"; id: string; message?: string }
     | { screen: "availability"; veterinarian: VeterinarianResponseDTO }
+    | { screen: "qualifications"; veterinarian: VeterinarianResponseDTO }
   >({ screen: "list" });
   const { width } = useWindowDimensions();
   const load = useCallback(
@@ -84,6 +86,16 @@ export function StaffAccountsScreen({
         : "Datos actualizados.",
     });
   };
+  if (route.screen === "qualifications" && kind === "veterinarians")
+    return (
+      <VeterinarianQualificationsScreen
+        veterinarian={route.veterinarian}
+        onBack={() => {
+          result.retry();
+          setRoute({ screen: "details", id: route.veterinarian.id });
+        }}
+      />
+    );
   if (
     route.screen === "availability" &&
     kind === "veterinarians" &&
@@ -118,6 +130,12 @@ export function StaffAccountsScreen({
         onBack={() => setRoute({ screen: "list" })}
         onEdit={() => setRoute({ screen: "edit", id: route.id })}
         onChanged={result.retry}
+        onQualifications={
+          kind === "veterinarians"
+            ? (veterinarian) =>
+                setRoute({ screen: "qualifications", veterinarian })
+            : undefined
+        }
         onAvailability={
           kind === "veterinarians" && canManageAvailability
             ? (veterinarian) =>

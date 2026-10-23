@@ -64,6 +64,7 @@ export function StaffAccountDetailsScreen({
   onEdit,
   onChanged,
   onAvailability,
+  onQualifications,
 }: {
   kind: StaffAccountKind;
   id: string;
@@ -72,6 +73,7 @@ export function StaffAccountDetailsScreen({
   onEdit: () => void;
   onChanged: () => void;
   onAvailability?: (veterinarian: VeterinarianResponseDTO) => void;
+  onQualifications?: (veterinarian: VeterinarianResponseDTO) => void;
 }) {
   const result = useStaffAccount(kind, id);
   const mutation = useStaffMutation();
@@ -221,6 +223,13 @@ export function StaffAccountDetailsScreen({
             </Text>
           ) : null}
           <View style={styles.controls}>
+            {"professionalRegistrationNumber" in account && onQualifications ? (
+              <StaffButton
+                label="Gestionar formación y diplomas"
+                onPress={() => onQualifications(account)}
+                disabled={blocked}
+              />
+            ) : null}
             {"professionalRegistrationNumber" in account && onAvailability ? (
               <StaffButton
                 label="Gestionar disponibilidad"

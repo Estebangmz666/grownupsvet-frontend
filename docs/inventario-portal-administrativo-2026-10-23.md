@@ -53,13 +53,12 @@ lo consulta. [Guarda de propietario 50](https://github.com/Estebangmz666/grownup
 
 ## Dependencias y alcances posteriores
 
-Clínica: borrador/finalización de atención (P08), fórmulas/controles (P09) y
-adendas (P11) figuran pendientes en Jira. El contrato y los controladores
-inspeccionados no exponen todavía las operaciones necesarias.
-Son funciones del **veterinario autorizado**; el administrador no debe editar
-datos clínicos. No corresponde simularlas como formularios administrativos
-ni inventar endpoints. Requieren contrato, decisiones clínicas e integración
-antes de un incremento de interfaz.
+**Aclaración posterior del usuario, 23/10/2026:** P3 está fuera del alcance
+de esta entrega, conforme a la entrega anterior. El borrador/finalización de
+atención (P08), fórmulas/controles (P09), adendas (P11) y sus contratos clínicos
+pendientes en Jira no son bloqueos del frontend P1/P2. El backend no los
+implementa todavía; no corresponde inventar endpoints ni añadir formularios
+clínicos a esta entrega.
 
 Siguen pendientes la aceptación integrada con cuentas reales, RBAC del
 servicio en esos recorridos, concurrencia/rollback PostgreSQL y evidencia

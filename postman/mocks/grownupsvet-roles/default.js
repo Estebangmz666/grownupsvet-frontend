@@ -195,6 +195,9 @@ const appointmentMetadata = new Map();
 let appointmentChangesPrepared = false;
 const appointmentNotifications = [];
 let nextNotificationRead = null;
+const qualificationDiplomas = new Map();
+let nextQualificationRead = null;
+let nextDiplomaValidation = null;
 
 function publicUser(user) {
   return {
@@ -257,6 +260,9 @@ function resetData() {
   appointmentChangesPrepared = false;
   appointmentNotifications.length = 0;
   nextNotificationRead = null;
+  qualificationDiplomas.clear();
+  nextQualificationRead = null;
+  nextDiplomaValidation = null;
   for (const account of accounts)
     users.set(account.id, {
       ...account,
@@ -1470,15 +1476,61 @@ function problem(response, status, code, detail, fieldErrors = []) {
     fieldErrors,
   });
 }
+function parseSimulationMultipart(bytes, contentType) {
+  const boundary = /boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(contentType);
+  if (!boundary || bytes.length > 6 * 1024 * 1024)
+    return { multipart: null, tooLarge: bytes.length > 6 * 1024 * 1024 };
+  const marker = Buffer.from(`--${boundary[1] ?? boundary[2]}`);
+  let cursor = bytes.indexOf(marker);
+  const files = [];
+  const fields = {};
+  while (cursor >= 0) {
+    const headerStart = cursor + marker.length + 2;
+    const headerEnd = bytes.indexOf(Buffer.from("\r\n\r\n"), headerStart);
+    if (headerEnd < 0 || headerEnd - headerStart > 4096) break;
+    const next = bytes.indexOf(marker, headerEnd + 4);
+    if (next < 0) break;
+    const headers = bytes.subarray(headerStart, headerEnd).toString("utf8");
+    const disposition = /^content-disposition:\s*form-data;([^\r\n]*)/im.exec(
+      headers,
+    );
+    const name = /(?:^|;)\s*name="([^"]+)"(?:;|$)/i.exec(
+      disposition?.[1] ?? "",
+    )?.[1];
+    if (name === "file")
+      files.push({
+        bytes: bytes.subarray(headerEnd + 4, next - 2),
+        contentType:
+          /content-type:\s*([^\r\n]+)/i.exec(headers)?.[1].trim() ?? "",
+      });
+    else if (name === "published")
+      fields.published = bytes
+        .subarray(headerEnd + 4, next - 2)
+        .toString("utf8");
+    cursor = next;
+  }
+  return { multipart: files.length === 1 ? files[0] : null, fields };
+}
 function readBody(request) {
-  if (request.body !== undefined) return Promise.resolve(request.body);
+  const contentType = String(request.headers["content-type"] ?? "");
+  const multipart = /^multipart\/form-data\b/i.test(contentType);
+  if (request.body !== undefined)
+    return Promise.resolve(
+      multipart
+        ? parseSimulationMultipart(Buffer.from(request.body), contentType)
+        : request.body,
+    );
   return new Promise((resolve, reject) => {
-    let raw = "";
+    const chunks = [];
     request.on("data", (chunk) => {
-      raw += chunk;
+      chunks.push(Buffer.from(chunk));
     });
     request.on("end", () => {
       try {
+        const bytes = Buffer.concat(chunks);
+        if (multipart)
+          return resolve(parseSimulationMultipart(bytes, contentType));
+        const raw = bytes.toString("utf8");
         resolve(raw ? JSON.parse(raw) : {});
       } catch {
         reject(new Error("INVALID_JSON"));
@@ -1486,6 +1538,319 @@ function readBody(request) {
     });
     request.on("error", reject);
   });
+}
+
+function simulationDiplomaPdf() {
+  const stream =
+    "BT /F1 16 Tf 40 720 Td (SIMULATION - NO ACADEMIC VALIDITY) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let text = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(text));
+    text += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const start = Buffer.byteLength(text);
+  text += `xref\n0 6\n0000000000 65535 f \n${offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+    .join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+  return Buffer.from(text);
+}
+function diplomaBytes(qualification) {
+  if (!qualification.diplomaAvailable) return null;
+  if (!qualificationDiplomas.has(qualification.id))
+    qualificationDiplomas.set(qualification.id, simulationDiplomaPdf());
+  return qualificationDiplomas.get(qualification.id);
+}
+async function handleVeterinarianQualifications(
+  request,
+  response,
+  bodyPromise,
+  path,
+  session,
+) {
+  const match =
+    /^\/api\/v1\/veterinarians\/([^/]+)\/qualifications(?:\/([^/]+)(?:\/(diploma)(?:\/(publication))?)?)?$/.exec(
+      path,
+    );
+  if (!match) return false;
+  const user = session.user;
+  const fail = (status, code, detail) => {
+    problem(response, status, code, detail);
+    return true;
+  };
+  if (
+    user.role !== "ADMINISTRATOR" ||
+    !user.permissions.includes("VETERINARIAN_MANAGE")
+  )
+    return fail(
+      403,
+      "ACCESS_DENIED",
+      "La cuenta no tiene permiso para gestionar formación.",
+    );
+  if (
+    [match[1], match[2]].some(
+      (id) =>
+        id !== undefined &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          id,
+        ),
+    )
+  )
+    return fail(400, "TYPE_MISMATCH", "El identificador no es válido.");
+  const veterinarian = veterinarians.find((item) => item.id === match[1]);
+  const qualification =
+    match[2] &&
+    veterinarian?.qualifications.find((item) => item.id === match[2]);
+  if (!veterinarian || (match[2] && !qualification))
+    return fail(
+      404,
+      "STAFF_RESOURCE_NOT_FOUND",
+      "No se encontró el recurso solicitado.",
+    );
+  const method = request.method;
+  const url = new URL(request.url, "http://simulation.invalid");
+  if (match[4] && method !== "PATCH")
+    return fail(405, "METHOD_NOT_ALLOWED", "El método no está permitido.");
+  if (method === "GET") {
+    let value = match[2]
+      ? structuredClone(qualification)
+      : structuredClone(veterinarian.qualifications);
+    const control =
+      nextQualificationRead?.veterinarianId === veterinarian.id
+        ? nextQualificationRead
+        : null;
+    if (control) nextQualificationRead = null;
+    const bytes = match[3] ? diplomaBytes(qualification) : null;
+    if (match[3] && !bytes)
+      return fail(
+        404,
+        "STAFF_RESOURCE_NOT_FOUND",
+        "No se encontró el diploma solicitado.",
+      );
+    if (control?.delayMs)
+      await new Promise((resolve) => setTimeout(resolve, control.delayMs));
+    if (control?.mode === "unavailable")
+      return fail(
+        503,
+        "SIMULATION_TEMPORARY_UNAVAILABLE",
+        "La consulta falló temporalmente.",
+      );
+    if (control?.mode === "forbidden")
+      return fail(
+        403,
+        "ACCESS_DENIED",
+        "No tienes permiso para esta consulta.",
+      );
+    if (control?.mode === "html") {
+      response.writeHead(200, {
+        "content-type": "text/html",
+        "cache-control": "no-store",
+      });
+      response.end("<p>Respuesta inesperada de simulacion</p>");
+    } else if (match[3]) {
+      response.writeHead(200, {
+        "content-type": "application/pdf",
+        "content-length": bytes.length,
+        "cache-control": "private, no-store",
+        "content-disposition": 'attachment; filename="diploma.pdf"',
+        "x-content-type-options": "nosniff",
+        "content-security-policy":
+          "sandbox; default-src 'none'; frame-ancestors 'none'",
+      });
+      response.end(bytes);
+    } else {
+      if (control?.mode === "extra-field")
+        (Array.isArray(value) ? value[0] : value).privatePath =
+          "simulation-only";
+      if (control?.mode === "foreign")
+        (Array.isArray(value) ? value[0] : value).id = recordId(
+          "e1000000",
+          999,
+        );
+      send(response, 200, value);
+    }
+    return true;
+  }
+  if (method === "DELETE" && match[2] && !match[4]) {
+    if (match[3]) {
+      qualificationDiplomas.delete(qualification.id);
+      qualification.diplomaAvailable = false;
+      qualification.diplomaPublished = false;
+    } else {
+      if (qualification.isBaseDegree)
+        return fail(
+          409,
+          "BASE_DEGREE_REQUIRED",
+          "El título base es obligatorio.",
+        );
+      qualificationDiplomas.delete(qualification.id);
+      veterinarian.qualifications = veterinarian.qualifications.filter(
+        (item) => item.id !== qualification.id,
+      );
+    }
+    veterinarian.updatedAt = new Date().toISOString();
+    await mutationResponse(response, 204);
+    return true;
+  }
+  const body = await bodyPromise;
+  if (method === "PATCH" && match[4]) {
+    if (
+      !objectWithFields(body, ["published"]) ||
+      typeof body.published !== "boolean"
+    )
+      return fail(400, "VALIDATION_FAILED", "Indica el estado de publicación.");
+    if (!qualification.diplomaAvailable)
+      return fail(
+        404,
+        "STAFF_RESOURCE_NOT_FOUND",
+        "No existe un diploma para publicar.",
+      );
+    qualification.diplomaPublished = body.published;
+  } else if (method === "PUT" && match[3] && !match[4]) {
+    const published =
+      url.searchParams.get("published") ?? body.fields?.published ?? "false";
+    if (!["true", "false"].includes(published))
+      return fail(
+        400,
+        "TYPE_MISMATCH",
+        "El estado de publicación no es válido.",
+      );
+    if (nextDiplomaValidation) {
+      const code = nextDiplomaValidation;
+      nextDiplomaValidation = null;
+      return fail(
+        code === "INVALID_DIPLOMA" ? 400 : 503,
+        code,
+        "Fallo de validación inyectado explícitamente por la simulación.",
+      );
+    }
+    const file = body.multipart;
+    if (body.tooLarge || file?.bytes.length > 5 * 1024 * 1024)
+      return fail(
+        413,
+        "DIPLOMA_TOO_LARGE",
+        "El diploma no debe superar 5 MiB.",
+      );
+    if (!file || !file.bytes.length)
+      return fail(400, "INVALID_DIPLOMA", "Adjunta un diploma PDF.");
+    if (file.contentType.toLowerCase() !== "application/pdf")
+      return fail(
+        415,
+        "INVALID_DIPLOMA_MEDIA_TYPE",
+        "El diploma debe enviarse como application/pdf.",
+      );
+    // Envelope checks only. Real structural PDF inspection belongs to the backend validator.
+    if (
+      !file.bytes.subarray(0, 5).equals(Buffer.from("%PDF-")) ||
+      !file.bytes.subarray(-1024).toString("latin1").trimEnd().endsWith("%%EOF")
+    )
+      return fail(
+        400,
+        "INVALID_DIPLOMA",
+        "El archivo no tiene la envoltura PDF esperada.",
+      );
+    qualificationDiplomas.set(qualification.id, Buffer.from(file.bytes));
+    qualification.diplomaAvailable = true;
+    qualification.diplomaPublished = published === "true";
+  } else if (
+    (method === "POST" && !match[2]) ||
+    (method === "PUT" && match[2] && !match[3])
+  ) {
+    if (
+      !objectWithFields(body, [
+        "type",
+        "title",
+        "institution",
+        "graduationYear",
+      ]) ||
+      !["UNDERGRADUATE", "SPECIALIZATION", "MASTERS", "DOCTORATE"].includes(
+        body.type,
+      ) ||
+      [body.title, body.institution].some(
+        (value) =>
+          typeof value !== "string" ||
+          value.length > 200 ||
+          !normalizedAppointmentReason(value),
+      )
+    )
+      return fail(
+        400,
+        "VALIDATION_FAILED",
+        "Revisa tipo, título e institución, de hasta 200 caracteres.",
+      );
+    const year = body.graduationYear ?? null;
+    if (
+      year !== null &&
+      (!Number.isInteger(year) ||
+        year < 1900 ||
+        year > Number(businessDate().slice(0, 4)))
+    )
+      return fail(
+        400,
+        "INVALID_GRADUATION_YEAR",
+        "El año no puede superar el año actual.",
+      );
+    const academic = {
+      type: body.type,
+      title: normalizedAppointmentReason(body.title),
+      institution: normalizedAppointmentReason(body.institution),
+      graduationYear: year,
+    };
+    if (!match[2]) {
+      if (veterinarian.qualifications.length >= 20)
+        return fail(
+          409,
+          "QUALIFICATION_LIMIT_REACHED",
+          "Se permiten hasta 20 títulos incluido el base.",
+        );
+      const created = {
+        id: randomUUID(),
+        ...academic,
+        isBaseDegree: false,
+        diplomaAvailable: false,
+        diplomaPublished: false,
+      };
+      veterinarian.qualifications.push(created);
+      veterinarian.updatedAt = new Date().toISOString();
+      await mutationResponse(response, 201, structuredClone(created), {
+        location: `${path}/${created.id}`,
+      });
+      return true;
+    }
+    if (qualification.isBaseDegree && body.type !== "UNDERGRADUATE")
+      return fail(
+        409,
+        "BASE_DEGREE_REQUIRED",
+        "El título base debe conservar el tipo de pregrado.",
+      );
+    if (
+      Object.entries(academic).some(
+        ([key, value]) => qualification[key] !== value,
+      )
+    )
+      qualification.diplomaPublished = false;
+    Object.assign(qualification, academic);
+    if (qualification.isBaseDegree) {
+      veterinarian.baseDegreeTitle = qualification.title;
+      veterinarian.baseDegreeInstitution = qualification.institution;
+    }
+  } else
+    return fail(
+      501,
+      "SIMULATION_ENDPOINT_NOT_MODELED",
+      "Esta operación no está modelada.",
+    );
+  veterinarian.updatedAt = new Date().toISOString();
+  await mutationResponse(response, 200, structuredClone(qualification));
+  return true;
 }
 function objectWithFields(body, allowed) {
   return (
@@ -2632,6 +2997,77 @@ async function handle(request, response, bodyPromise) {
   if (method === "POST" && url.pathname === "/__simulation/fixture") {
     const body = await bodyPromise;
     const user = [...users.values()].find((item) => item.email === body.email);
+    if (body.action === "prepare-qualifications") {
+      const veterinarian = veterinarians.find(
+        (item) => item.id === body.veterinarianId,
+      );
+      const count = body.count ?? 20;
+      if (!veterinarian || !Number.isInteger(count) || count < 1 || count > 20)
+        return problem(
+          response,
+          400,
+          "SIMULATION_FIXTURE_INVALID",
+          "Revisa veterinario y cantidad de títulos de 1 a 20.",
+        );
+      veterinarian.qualifications = veterinarian.qualifications.filter(
+        (item) => item.isBaseDegree,
+      );
+      for (let index = 1; index < count; index += 1)
+        veterinarian.qualifications.push({
+          id: recordId("e2000000", index),
+          type: "SPECIALIZATION",
+          title: `Título adicional de simulación ${index}`,
+          institution: "Institución de simulación",
+          graduationYear: 2000,
+          isBaseDegree: false,
+          diplomaAvailable: false,
+          diplomaPublished: false,
+        });
+      return send(response, 204);
+    }
+    if (body.action === "next-qualification-read") {
+      if (
+        !veterinarians.some((item) => item.id === body.veterinarianId) ||
+        ![
+          "normal",
+          "unavailable",
+          "forbidden",
+          "html",
+          "extra-field",
+          "foreign",
+        ].includes(body.mode)
+      )
+        return problem(
+          response,
+          400,
+          "SIMULATION_FIXTURE_INVALID",
+          "Revisa el control de consulta académica.",
+        );
+      nextQualificationRead = {
+        veterinarianId: body.veterinarianId,
+        mode: body.mode,
+        delayMs: Math.max(0, Math.min(5000, Number(body.delayMs) || 0)),
+      };
+      return send(response, 204);
+    }
+    if (body.action === "next-diploma-validation") {
+      if (
+        ![
+          "INVALID_DIPLOMA",
+          "DIPLOMA_VALIDATION_BUSY",
+          "DIPLOMA_VALIDATION_UNAVAILABLE",
+          "DIPLOMA_VALIDATION_INTERRUPTED",
+        ].includes(body.errorCode)
+      )
+        return problem(
+          response,
+          400,
+          "SIMULATION_FIXTURE_INVALID",
+          "Revisa el fallo de validación inyectado.",
+        );
+      nextDiplomaValidation = body.errorCode;
+      return send(response, 204);
+    }
     if (body.action === "prepare-appointment-notifications") {
       const appointment = appointmentRecords().find(
         (item) => item.id === body.appointmentId,
@@ -3266,6 +3702,9 @@ async function handle(request, response, bodyPromise) {
       path,
     ) ||
     /^\/api\/v1\/staff\/[^/]+\/invitations$/.test(path) ||
+    /^\/api\/v1\/veterinarians\/[^/]+\/qualifications(?:\/[^/]+(?:\/diploma(?:\/publication)?)?)?$/.test(
+      path,
+    ) ||
     /^\/api\/v1\/veterinarians\/[^/]+\/availability-slot-batches$/.test(path) ||
     /^\/api\/v1\/veterinarians\/[^/]+\/availability-slots(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(
       path,
@@ -3298,6 +3737,16 @@ async function handle(request, response, bodyPromise) {
   )
     return;
   if (await handleAvailability(request, response, bodyPromise, path, session))
+    return;
+  if (
+    await handleVeterinarianQualifications(
+      request,
+      response,
+      bodyPromise,
+      path,
+      session,
+    )
+  )
     return;
   if (await handleStaff(request, response, bodyPromise, path, session)) return;
   if (await handleAppointmentNotifications(request, response, path, session))

@@ -16,12 +16,12 @@ correo. El backend autoriza cada operación.
 
 ## Alcance implementado
 
-| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                   |
-| --------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                                  |
-| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                          |
-| `ADMINISTRATOR` | Administración  | Gestión de veterinarios y disponibilidad; agenda e historial de citas, decisiones, reprogramación y reemplazo de veterinario según permisos. |
-| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                             |
+| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                                       |
+| --------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                                                      |
+| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                                              |
+| `ADMINISTRATOR` | Administración  | Gestión de veterinarios, formación/diplomas y disponibilidad; agenda e historial de citas, decisiones, reprogramación y reemplazo de veterinario según permisos. |
+| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                                                 |
 
 El acceso público incluye login, registro de propietarios, recuperación de
 contraseña en tres pasos y activación de personal mediante invitación. Login,
@@ -118,7 +118,29 @@ y el último código de fallo público como datos independientes. La aceptación
 SMTP no confirma entrega en el buzón ni lectura. Un error de esta consulta
 permite reintentar o volver al detalle; no solicita reenviar correos.
 
+Desde el detalle del veterinario se puede **Gestionar formación y diplomas**
+con `VETERINARIAN_MANAGE`, aunque la cuenta esté pendiente o deshabilitada.
+Permite consultar, crear y editar hasta 20 títulos, incluido el pregrado base
+obligatorio, y eliminar títulos adicionales. Los diplomas se cargan como PDF
+privados; preparar la descarga, descargarlo y confirmar su revisión preceden
+a la confirmación de publicación. Se puede retirar la publicación o eliminar
+el PDF conservando el título. Cambiar datos académicos retira la publicación
+del diploma sin eliminar su archivo. Una respuesta perdida exige consultar
+los datos actuales antes de otra decisión; esa lectura no identifica qué
+intento creó un título. El servidor valida la estructura y los límites del PDF.
+
 ## Validación y pendientes
+
+La [verificación de formación veterinaria del 23/10/2026](docs/verificacion-formacion-veterinaria-2026-10-23.md)
+registra **811 pruebas en 46 archivos**, tipos, lint y exportación web correctos.
+Incluye 22 comprobaciones del cliente real mediante 91 peticiones, tres
+solicitudes HTTP crudas adicionales y ocho comparaciones de bytes/SHA-256.
+Se verificaron alta, PDF privado, descarga idéntica, revisión y publicación,
+edición que retira publicación y eliminación separada de PDF/título en el
+navegador, con escritorio y móvil de 390 px. Distingue la limitación multipart
+de Postman de la prueba binaria loopback y de la aceptación con el servicio
+real. Commit, push, CI y despliegue de este incremento quedan pendientes en
+ese corte previo a publicación.
 
 La [verificación de avisos administrativos del 23/10/2026](docs/verificacion-avisos-administrativos-2026-10-23.md)
 registra **700 pruebas en 44 archivos**, tipos, lint y exportación web correctos.
@@ -179,9 +201,11 @@ aceptación del servicio real. Continúan pendientes:
 - [Mejora de las plantillas de correo del backend](docs/pendientes-proyecto.md),
   pendiente recordado por el usuario el 23/10/2026.
 
-No se incluyen cancelación/reprogramación por el propietario, atención clínica,
-títulos adicionales ni archivos de diplomas. La agenda del rol veterinario
-es de consulta.
+P3 está **fuera del alcance de esta entrega**, según la aclaración expresa
+del usuario del 23/10/2026. Las atenciones, fórmulas, controles y demás
+operaciones clínicas de esa fase no son pendientes del frontend P1/P2 ni
+bloquean su cierre. No se incluyen cancelación/reprogramación por el
+propietario. La agenda del rol veterinario es de consulta.
 
 Las [vistas por rol](docs/verificacion-vistas-por-rol-2026-10-22.md), la
 [gestión administrativa](docs/verificacion-incremento-administrativo-1-2026-10-22.md)

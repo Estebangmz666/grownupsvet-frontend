@@ -34,11 +34,69 @@ El alcance modelado es:
   decisiones, reprogramación y reasignación con versión observada y replay.
 - Consulta de avisos por cita para administración y propietarios, con páginas
   y destinatarios autorizados. Las fixtures aportan sus estados; no hay SMTP.
+- Formación veterinaria: títulos base/adicionales y diplomas administrativos,
+  con carga privada, descarga y control de publicación.
 
 Las operaciones restantes devuelven **501 SIMULATION_ENDPOINT_NOT_MODELED**.
 No se simulan creación o edición de mascotas, fotos,
 atención clínica ni operaciones fuera del alcance descrito. Un 501 es una
 limitación del entorno, no una respuesta atribuida a la API real.
+
+## Formación veterinaria y diplomas
+
+Se modelan las nueve operaciones existentes de `/veterinarians/{id}/qualifications`
+y sus recursos de diploma/publicación. Requieren ADMINISTRATOR autorizado con
+`VETERINARIAN_MANAGE`; los demás roles no heredan el permiso. La lista es un
+arreglo sin paginación. El límite 20 cuenta el título base, que no se puede
+eliminar ni convertir a otro tipo. Una edición académica efectiva conserva
+el archivo y retira su publicación. Cargar o reemplazar sin `published`
+explícito deja el PDF privado. El veterinario destino no necesita estar activo.
+
+Con uso exclusivo de la simulación 4900:
+
+```powershell
+node postman/scripts/verify_veterinarian_qualifications_client_http.mjs
+```
+
+El script compila el cliente TypeScript actual con esbuild y usa HTTP real;
+su observador registra método/ruta/estado sin reemplazar las respuestas.
+Restablece los datos ficticios al empezar y terminar. No ejecutarlo durante
+un recorrido de navegador. Escribe el informe saneado en
+`postman/.runtime/veterinarian-qualifications-client-http.json`.
+
+La ejecución final del 23/10/2026 registró 22 comprobaciones correctas y 91
+peticiones del cliente: 89 a Postman y dos a un servidor binario loopback
+aislado que el propio script abre y cierra en un puerto temporal. Añade tres
+solicitudes HTTP crudas separadas y ocho comparaciones de bytes/SHA-256.
+Los controles de fixtures no se incluyen en las 91 peticiones. La
+[verificación de formación](../docs/verificacion-formacion-veterinaria-2026-10-23.md)
+separa este resultado del check global y del recorrido de navegador.
+
+Los controles siguientes usan `POST /api/__simulation/fixture`, que es una
+ruta de pruebas local y no pertenece al backend:
+
+| `action`                  | Parámetros y efecto                                                                                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prepare-qualifications`  | `veterinarianId`, `count` entero de 1 a 20, por defecto 20. Conserva el título base y sustituye los adicionales por títulos ficticios.                                                         |
+| `next-qualification-read` | `veterinarianId`, `mode`: `normal`, `unavailable`, `forbidden`, `html`, `extra-field` o `foreign`; `delayMs` opcional de 0 a 5000. Afecta una consulta coincidente.                            |
+| `next-diploma-validation` | `errorCode`: `INVALID_DIPLOMA` (400), `DIPLOMA_VALIDATION_BUSY`, `DIPLOMA_VALIDATION_UNAVAILABLE` o `DIPLOMA_VALIDATION_INTERRUPTED` (503). La carga conserva el archivo/publicación anterior. |
+| `next-mutation`           | Los controles existentes `drop`, `delayMs` o `responseMode` permiten perder o invalidar el recibo de un alta ya aplicada. Se consulta después sin reenviar automáticamente.                    |
+
+El mock no inspecciona de forma completa la estructura de los PDF ni acredita
+el máximo de 50 páginas u otras restricciones del analizador del backend. Los
+400/503 de validación anteriores son fallos inyectados, y HTML/campos extra/
+identidad ajena son respuestas deliberadamente inválidas.
+
+El interceptor de Postman decodifica multipart como UTF-8 y altera bytes PDF
+no UTF-8 antes del handler. El primer fallo de SHA se conserva en
+`output/frontend-formacion-2026-10-23/client-http-first-attempt.json` del
+directorio GrownupsVet. La ejecución final usa PDF ASCII en Postman y prueba
+por separado un PDF binario con el mismo cliente real y `fetch` original en
+el servidor loopback aislado. No se relajó la igualdad de bytes ni se presenta
+ese servidor como validador estructural. El informe final copiado a
+`output/frontend-formacion-2026-10-23/client-http-verification.json` distingue
+ambos transportes. Este recorrido no prueba el directorio OWNER ni la descarga
+pública de diplomas.
 
 ## Seguimiento administrativo de avisos
 
