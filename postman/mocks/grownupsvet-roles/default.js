@@ -677,6 +677,24 @@ async function mutationResponse(response, status, body, headers) {
     response.destroy();
     return;
   }
+  if (controlled?.responseMode === "empty")
+    return send(response, status, undefined, headers);
+  if (controlled?.responseMode === "invalid-json") {
+    response.writeHead(status, {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      ...headers,
+    });
+    response.end('{"simulationOnly":');
+    return;
+  }
+  if (controlled?.responseMode === "timeout")
+    return problem(
+      response,
+      408,
+      "SIMULATION_RESPONSE_TIMEOUT",
+      "La escritura se aplicó, pero su respuesta agotó el tiempo de espera simulado.",
+    );
   return send(response, status, body, headers);
 }
 function sourceForUser(user) {
@@ -1054,6 +1072,187 @@ function availabilityBodyError(body, operation) {
       return { code: "TYPE_MISMATCH", fields: [] };
   }
   return fields.length ? { code: "VALIDATION_FAILED", fields } : null;
+}
+function availabilityBatchBodyError(body) {
+  if (
+    !objectWithFields(body, [
+      "startDate",
+      "endDate",
+      "daysOfWeek",
+      "dailyStartTime",
+      "dailyEndTime",
+    ])
+  )
+    return { code: "INVALID_REQUEST", fields: [] };
+  const fields = [];
+  for (const field of ["startDate", "endDate"]) {
+    const value = body[field];
+    if (value === undefined || value === null)
+      fields.push(fieldError(field, "Indica una fecha local."));
+    else if (
+      typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      !Number.isFinite(Date.parse(`${value}T00:00:00Z`)) ||
+      new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value
+    )
+      return { code: "TYPE_MISMATCH", fields: [] };
+  }
+  for (const field of ["dailyStartTime", "dailyEndTime"]) {
+    if (body[field] === undefined || body[field] === null)
+      fields.push(fieldError(field, "Indica la hora local."));
+    else if (typeof body[field] !== "string")
+      return { code: "TYPE_MISMATCH", fields: [] };
+  }
+  if (body.daysOfWeek === undefined || body.daysOfWeek === null)
+    fields.push(
+      fieldError("daysOfWeek", "Selecciona al menos un día de la semana."),
+    );
+  else if (!Array.isArray(body.daysOfWeek))
+    return { code: "TYPE_MISMATCH", fields: [] };
+  else {
+    if (body.daysOfWeek.length < 1 || body.daysOfWeek.length > 7)
+      fields.push(
+        fieldError(
+          "daysOfWeek",
+          "Selecciona de uno a siete días de la semana.",
+        ),
+      );
+    for (const day of body.daysOfWeek) {
+      if (day === null) continue; // The service rejects null elements after DTO validation.
+      if (typeof day !== "number" || !Number.isInteger(day))
+        return { code: "TYPE_MISMATCH", fields: [] };
+      if (day < 1 || day > 7)
+        fields.push(
+          fieldError("daysOfWeek", "Usa días ISO entre uno y siete."),
+        );
+    }
+  }
+  return fields.length ? { code: "VALIDATION_FAILED", fields } : null;
+}
+function availabilityBatchStarts(body) {
+  const firstDate = Date.parse(`${body.startDate}T00:00:00Z`);
+  const lastDate = Date.parse(`${body.endDate}T00:00:00Z`);
+  const dateCount = (lastDate - firstDate) / 86400000 + 1;
+  if (dateCount < 1 || dateCount > 31)
+    return { error: "El rango debe incluir entre una y 31 fechas locales." };
+  if (
+    new Set(body.daysOfWeek).size !== body.daysOfWeek.length ||
+    body.daysOfWeek.some((day) => day === null)
+  )
+    return {
+      error:
+        "Los días de la semana deben ser únicos y usar valores ISO de uno a siete.",
+    };
+  if (
+    !/^(?:[01][0-9]|2[0-3]):(?:00|30)$/.test(body.dailyStartTime) ||
+    !/^(?:(?:[01][0-9]|2[0-3]):(?:00|30)|24:00)$/.test(body.dailyEndTime)
+  )
+    return {
+      error:
+        "Usa horas de inicio y fin en :00 o :30; 24:00 solo puede ser el fin.",
+    };
+  const minute = (value) =>
+    Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+  const firstMinute = minute(body.dailyStartTime);
+  const lastMinute = minute(body.dailyEndTime);
+  if (lastMinute <= firstMinute)
+    return { error: "La hora final debe ser posterior a la inicial." };
+  const starts = [];
+  for (let date = firstDate; date <= lastDate; date += 86400000) {
+    const weekday = new Date(date).getUTCDay() || 7;
+    if (!body.daysOfWeek.includes(weekday)) continue;
+    const localMidnight = Date.parse(
+      `${new Date(date).toISOString().slice(0, 10)}T00:00:00-05:00`,
+    );
+    for (let time = firstMinute; time < lastMinute; time += 30) {
+      starts.push(localMidnight + time * 60000);
+      if (starts.length > 1000)
+        return { error: "La generación supera el máximo de 1000 turnos." };
+    }
+  }
+  if (!starts.length)
+    return { error: "La generación debe producir al menos un turno." };
+  if (starts.some((start) => start <= Date.now()))
+    return { error: "Todos los turnos generados deben ser futuros." };
+  return { starts };
+}
+async function handleAvailabilityBatch(
+  request,
+  response,
+  bodyPromise,
+  path,
+  session,
+) {
+  const route =
+    /^\/api\/v1\/veterinarians\/([^/]+)\/availability-slot-batches$/.exec(path);
+  if (!route) return false;
+  const fail = (status, code, detail, fields = []) => {
+    problem(response, status, code, detail, fields);
+    return true;
+  };
+  const actor = session.user;
+  if (
+    actor.role !== "ADMINISTRATOR" ||
+    !actor.permissions.includes("VETERINARIAN_AVAILABILITY_MANAGE")
+  )
+    return fail(403, "ACCESS_DENIED", "La cuenta no puede generar turnos.");
+  if (request.method !== "POST")
+    return fail(
+      501,
+      "SIMULATION_ENDPOINT_NOT_MODELED",
+      "Esta operación no está modelada.",
+    );
+  const body = await bodyPromise;
+  const invalid = availabilityBatchBodyError(body);
+  if (invalid)
+    return fail(
+      400,
+      invalid.code,
+      "Revisa los campos del lote.",
+      invalid.fields,
+    );
+  const veterinarianId = route[1];
+  if (!veterinarians.some((item) => item.id === veterinarianId))
+    return fail(
+      404,
+      "STAFF_RESOURCE_NOT_FOUND",
+      "No se encontró el profesional solicitado.",
+    );
+  if (users.get(veterinarianId).status !== "ACTIVE")
+    return fail(
+      409,
+      "VETERINARIAN_NOT_ACTIVE",
+      "El veterinario debe estar activo para publicar turnos.",
+    );
+  const generated = availabilityBatchStarts(body);
+  if (generated.error)
+    return fail(400, "INVALID_AVAILABILITY_REQUEST", generated.error);
+  const existing = new Set(
+    availabilitySlots
+      .filter((slot) => slot.veterinarianId === veterinarianId)
+      .map((slot) => Date.parse(slot.startsAt)),
+  );
+  // Validate the entire batch before changing either slots or audit events.
+  if (generated.starts.some((start) => existing.has(start)))
+    return fail(
+      409,
+      "AVAILABILITY_SLOT_CONFLICT",
+      "El lote contiene un turno que ya existe; no se creó ninguno.",
+    );
+  const created = generated.starts.map((start) =>
+    newAvailabilitySlot(veterinarianId, start),
+  );
+  const events = created.map((slot) =>
+    availabilityEvent(slot, actor.id, "CREATED"),
+  );
+  availabilitySlots.push(...created);
+  availabilityEvents.push(...events);
+  await mutationResponse(response, 201, {
+    createdCount: created.length,
+    items: created.map((slot) => ({ ...slot })),
+    timeZone: TIME_ZONE,
+  });
+  return true;
 }
 async function handleAvailability(
   request,
@@ -1442,11 +1641,18 @@ async function handle(request, response, bodyPromise) {
     }
     if (
       body.action === "next-mutation" &&
-      (typeof body.drop === "boolean" || Number.isInteger(body.delayMs))
+      (typeof body.drop === "boolean" ||
+        Number.isInteger(body.delayMs) ||
+        ["empty", "invalid-json", "timeout"].includes(body.responseMode))
     ) {
       nextMutation = {
         drop: body.drop === true,
         delayMs: Math.max(0, Math.min(10_000, body.delayMs || 0)),
+        responseMode: ["empty", "invalid-json", "timeout"].includes(
+          body.responseMode,
+        )
+          ? body.responseMode
+          : undefined,
       };
       return send(response, 204);
     }
@@ -1891,6 +2097,7 @@ async function handle(request, response, bodyPromise) {
       path,
     ) ||
     /^\/api\/v1\/staff\/[^/]+\/invitations$/.test(path) ||
+    /^\/api\/v1\/veterinarians\/[^/]+\/availability-slot-batches$/.test(path) ||
     /^\/api\/v1\/veterinarians\/[^/]+\/availability-slots(?:\/[^/]+(?:\/(?:status|events))?)?$/.test(
       path,
     ) ||
@@ -1914,6 +2121,10 @@ async function handle(request, response, bodyPromise) {
     await pm.state.set(session.stateKey, null);
     return send(response, 204);
   }
+  if (
+    await handleAvailabilityBatch(request, response, bodyPromise, path, session)
+  )
+    return;
   if (await handleAvailability(request, response, bodyPromise, path, session))
     return;
   if (await handleStaff(request, response, bodyPromise, path, session)) return;

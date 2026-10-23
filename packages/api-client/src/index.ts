@@ -9,3 +9,6 @@ export * from "./staff.api";
 export * from "./staff.types";
 export * from "./veterinarianAvailability.api";
 export * from "./veterinarianAvailability.types";
+export * from "./veterinarianAvailabilityBatch.api";
+export * from "./veterinarianAvailabilityBatch.model";
+export * from "./veterinarianAvailabilityBatch.types";

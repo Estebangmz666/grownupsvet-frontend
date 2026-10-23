@@ -37,6 +37,7 @@ import { reconciledStaffPage } from "../staffManagement";
 import { staffStyles as styles } from "../staffStyles";
 import { AvailabilitySlotFormScreen } from "./AvailabilitySlotFormScreen";
 import { AvailabilitySlotDetailsScreen } from "./AvailabilitySlotDetailsScreen";
+import { AvailabilityBatchScreen } from "./AvailabilityBatchScreen";
 
 export function VeterinarianAvailabilityScreen({
   veterinarian,
@@ -53,7 +54,7 @@ export function VeterinarianAvailabilityScreen({
   const [dayInput, setDayInput] = useState(query.day);
   const [dayError, setDayError] = useState("");
   const [route, setRoute] = useState<
-    | { screen: "list" | "create" }
+    | { screen: "list" | "create" | "batch" }
     | { screen: "details"; slotId: string; message?: string }
     | { screen: "edit"; slot: VeterinarianAvailabilitySlotResponseDTO }
   >({ screen: "list" });
@@ -101,6 +102,15 @@ export function VeterinarianAvailabilityScreen({
     result.retry();
     setRoute({ screen: "list" });
   };
+  if (route.screen === "batch")
+    return (
+      <AvailabilityBatchScreen
+        veterinarian={veterinarian}
+        initialDay={query.day}
+        onBack={() => showList()}
+        onBrowseDay={(day) => showList(day)}
+      />
+    );
   if (route.screen === "create")
     return (
       <AvailabilitySlotFormScreen
@@ -164,6 +174,13 @@ export function VeterinarianAvailabilityScreen({
         <StaffButton
           label="Publicar un turno"
           onPress={() => setRoute({ screen: "create" })}
+          disabled={
+            veterinarian.status !== "ACTIVE" || result.loading || !!result.error
+          }
+        />
+        <StaffButton
+          label="Generar lote de turnos"
+          onPress={() => setRoute({ screen: "batch" })}
           disabled={
             veterinarian.status !== "ACTIVE" || result.loading || !!result.error
           }

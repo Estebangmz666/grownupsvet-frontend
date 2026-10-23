@@ -9,6 +9,7 @@ import argparse
 import base64
 import json
 import re
+from time import monotonic
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError
@@ -48,15 +49,17 @@ def main() -> None:
             assert status == expected_status, f'{method} {path}: {status}, esperado {expected_status}'
             assert response.headers.get('Cache-Control') == 'no-store', f'{path}: falta no-store'
             result = json.loads(raw) if raw else None
-            if status == 201 and path != '/auth/registrations':
+            receipt_without_location = path == '/auth/registrations' or path.endswith('/availability-slot-batches')
+            if status == 201 and not receipt_without_location:
                 assert response.headers.get('Location') == '/api/v1/' + path.lstrip('/') + '/' + result['id']
-            if status == 201 and path == '/auth/registrations':
+            if status == 201 and receipt_without_location:
                 assert response.headers.get('Location') is None
         if error_code:
             assert result['errorCode'] == error_code
         if contract_path:
             operation = spec['paths'][contract_path][method.lower()]
             documented = operation['responses'][str(status)]
+            assert result is not None or not documented.get('content'), f'{path}: falta el cuerpo documentado'
             if result is not None:
                 contents = documented['content']
                 content_type = 'application/problem+json' if status >= 400 else 'application/json'
@@ -66,10 +69,13 @@ def main() -> None:
         checks.append({'method': method, 'path': path, 'status': status, 'schemaValidated': contract_path is not None})
         return result
 
-    def dropped_mutation(path, body, label):
+    def dropped_mutation(path, body, label, *, token=None):
+        headers = {'Content-Type': 'application/json'}
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
         lost_request = Request(args.base_url.rstrip('/') + path,
                                data=json.dumps(body).encode(),
-                               headers={'Content-Type': 'application/json'}, method='POST')
+                               headers=headers, method='POST')
         try:
             with urlopen(lost_request, timeout=10) as response:
                 raise AssertionError(f'La respuesta perdida no debe producir {response.status}')
@@ -595,20 +601,153 @@ def main() -> None:
             body={'startsAt': f'{third_day}T11:00:00-05:00'}, contract_path=schedule_contract)
     fixture('next-mutation', drop=True)
     dropped_slot_body = {'startsAt': f'{third_day}T12:00:00-05:00'}
-    # This controlled write includes its administrator token, without storing it in the report.
-    lost_slot_request = Request(args.base_url.rstrip('/') + schedule, data=json.dumps(dropped_slot_body).encode(),
-                                headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token('ADMINISTRATOR')}, method='POST')
-    try:
-        with urlopen(lost_slot_request, timeout=10) as response:
-            raise AssertionError(f'La respuesta de creación perdida no debe producir {response.status}')
-    except HTTPError as error:
-        assert error.code == 502
-        error.close()
-        checks.append({'method': 'POST', 'path': schedule, 'status': 502, 'schemaValidated': False,
-                       'injectedFailure': 'response-dropped-after-availability-created'})
+    dropped_mutation(schedule, dropped_slot_body, 'response-dropped-after-availability-created', token=token('ADMINISTRATOR'))
     reconciled_day = request('GET', schedule + '?' + urlencode({'from': third_day, 'to': third_day}), 200,
                               token=token('ADMINISTRATOR'), contract_path=schedule_contract)
     assert len(reconciled_day['items']) == 1 and reconciled_day['items'][0]['startsAt'] == f'{third_day}T17:00:00.000Z'
+
+    # SCRUM-37 completion: batches generate real slot DTOs atomically in this stand-in.
+    batch_path = f'/veterinarians/{veterinarian_id}/availability-slot-batches'
+    batch_contract = '/api/v1/veterinarians/{veterinarianId}/availability-slot-batches'
+    local_zone = timezone(timedelta(hours=-5))
+
+    def future_day(offset):
+        return (datetime.fromisoformat(today) + timedelta(days=offset)).date()
+
+    def batch_body(offset, *, number_of_dates=1, start='16:00', end='17:00', weekdays=None):
+        first_date = future_day(offset)
+        return {'startDate': first_date.isoformat(),
+                'endDate': (first_date + timedelta(days=number_of_dates - 1)).isoformat(),
+                'daysOfWeek': [first_date.isoweekday()] if weekdays is None else weekdays,
+                'dailyStartTime': start, 'dailyEndTime': end}
+
+    def post_batch(body, expected=201, *, actor='ADMINISTRATOR', veterinarian=veterinarian_id, error=None):
+        return request('POST', f'/veterinarians/{veterinarian}/availability-slot-batches', expected,
+                       token=token(actor), body=body, contract_path=batch_contract, error_code=error)
+
+    def verify_batch_receipt(receipt, *, count, veterinarian=veterinarian_id):
+        assert set(receipt) == {'createdCount', 'items', 'timeZone'}
+        assert receipt['createdCount'] == count == len(receipt['items']) and receipt['timeZone'] == 'America/Bogota'
+        assert len({slot['id'] for slot in receipt['items']}) == count
+        for slot in receipt['items']:
+            assert slot['veterinarianId'] == veterinarian and slot['status'] == 'PUBLISHED' and slot['version'] == 0
+            start = datetime.fromisoformat(slot['startsAt'].replace('Z', '+00:00'))
+            end = datetime.fromisoformat(slot['endsAt'].replace('Z', '+00:00'))
+            assert end - start == timedelta(minutes=30) and start.astimezone(local_zone).minute in (0, 30)
+
+    def read_generated_day(offset):
+        day = future_day(offset).isoformat()
+        return request('GET', schedule + '?' + urlencode({'from': day, 'to': day, 'size': 100}), 200,
+                       token=token('ADMINISTRATOR'), contract_path=schedule_contract)
+
+    sample_batch = batch_body(7, number_of_dates=3)
+    for actor in ['OWNER', 'VETERINARIAN', 'SUPER_ADMIN']:
+        post_batch(sample_batch, 403, actor=actor)
+    request('POST', batch_path, 401, token=expired_administrator['accessToken'], body=sample_batch, contract_path=batch_contract)
+    post_batch(sample_batch, 404, veterinarian=missing_id, error='STAFF_RESOURCE_NOT_FOUND')
+    post_batch(sample_batch, 409, veterinarian=inactive_veterinarian['id'], error='VETERINARIAN_NOT_ACTIVE')
+    for body in [{}, {**sample_batch, 'daysOfWeek': []}, {**sample_batch, 'daysOfWeek': [0]},
+                 {**sample_batch, 'daysOfWeek': [8]}, {**sample_batch, 'daysOfWeek': list(range(1, 8)) + [1]},
+                 {**sample_batch, 'startDate': None}]:
+        post_batch(body, 400, error='VALIDATION_FAILED')
+    for body in [{**sample_batch, 'startDate': '2026-02-30'}, {**sample_batch, 'daysOfWeek': ['1']},
+                 {**sample_batch, 'daysOfWeek': [1.5]}, {**sample_batch, 'daysOfWeek': [True]},
+                 {**sample_batch, 'dailyStartTime': 1600}]:
+        post_batch(body, 400, error='TYPE_MISMATCH')
+    post_batch({**sample_batch, 'unexpected': True}, 400, error='INVALID_REQUEST')
+    for body in [{**sample_batch, 'endDate': future_day(6).isoformat()}, batch_body(30, number_of_dates=32),
+                 {**sample_batch, 'daysOfWeek': [1, 1]}, {**sample_batch, 'daysOfWeek': [None]},
+                 batch_body(14, weekdays=[future_day(14).isoweekday() % 7 + 1]),
+                 batch_body(14, start='24:00', end='24:00'), batch_body(14, start='16:15'),
+                 batch_body(14, start='17:00', end='16:00'), batch_body(14, start='16:00', end='16:00'),
+                 batch_body(-1), batch_body(-1, number_of_dates=3, weekdays=list(range(1, 8)))]:
+        post_batch(body, 400, error='INVALID_AVAILABILITY_REQUEST')
+
+    # The first possible conflict is late in the batch; earlier free slots must not persist.
+    before_collision = request('GET', schedule + day_query, 200, token=token('ADMINISTRATOR'), contract_path=schedule_contract)
+    blocked_path = schedule + '/' + blocked_schedule['items'][0]['id']
+    before_events = request('GET', blocked_path + '/events', 200, token=token('ADMINISTRATOR'), contract_path=slot_contract + '/events')
+    late_collision = batch_body(1, start='08:00', end='10:00')
+    post_batch(late_collision, 409, error='AVAILABILITY_SLOT_CONFLICT')
+    post_batch(batch_body(1, start='09:30', end='10:00'), 409, error='AVAILABILITY_SLOT_CONFLICT')
+    after_collision = request('GET', schedule + day_query, 200, token=token('ADMINISTRATOR'), contract_path=schedule_contract)
+    after_events = request('GET', blocked_path + '/events', 200, token=token('ADMINISTRATOR'), contract_path=slot_contract + '/events')
+    assert {slot['id'] for slot in before_collision['items']} == {slot['id'] for slot in after_collision['items']}
+    assert before_events == after_events
+
+    selective_batch = post_batch(sample_batch)
+    verify_batch_receipt(selective_batch, count=2)
+    assert all(datetime.fromisoformat(slot['startsAt'].replace('Z', '+00:00')).astimezone(local_zone).date() == future_day(7)
+               for slot in selective_batch['items'])
+    for slot in selective_batch['items']:
+        events = request('GET', schedule + '/' + slot['id'] + '/events', 200,
+                          token=token('ADMINISTRATOR'), contract_path=slot_contract + '/events')
+        assert len(events['items']) == 1 and events['items'][0]['eventType'] == 'CREATED'
+        assert all(events['items'][0][field] is None for field in ['previousStartsAt', 'previousEndsAt', 'previousStatus', 'reason'])
+    post_batch(sample_batch, 409, error='AVAILABILITY_SLOT_CONFLICT')
+    separate_agenda = post_batch(sample_batch, veterinarian=other_veterinarian['id'])
+    verify_batch_receipt(separate_agenda, count=2, veterinarian=other_veterinarian['id'])
+
+    midnight_batch = post_batch(batch_body(11, start='23:30', end='24:00'))
+    verify_batch_receipt(midnight_batch, count=1)
+    midnight_start = datetime.fromisoformat(midnight_batch['items'][0]['startsAt'].replace('Z', '+00:00')).astimezone(local_zone)
+    midnight_end = datetime.fromisoformat(midnight_batch['items'][0]['endsAt'].replace('Z', '+00:00')).astimezone(local_zone)
+    assert midnight_start.date() == future_day(11) and (midnight_start.hour, midnight_start.minute) == (23, 30)
+    assert midnight_end.date() == future_day(12) and midnight_end.hour == midnight_end.minute == 0
+    # Only generated dates must be future: an earlier range bound can be excluded by its weekday.
+    filtered_past_bound = post_batch(batch_body(-1, number_of_dates=3, start='13:00', end='13:30',
+                                               weekdays=[future_day(1).isoweekday()]))
+    verify_batch_receipt(filtered_past_bound, count=1)
+    last_31 = post_batch(batch_body(50, number_of_dates=31, start='18:00', end='18:30'))
+    verify_batch_receipt(last_31, count=5)
+
+    # 25 dates * 40 starts = 1000; administration has no owner-only 60-day horizon.
+    thousand = post_batch(batch_body(100, number_of_dates=25, start='04:00', end='24:00', weekdays=list(range(1, 8))))
+    verify_batch_receipt(thousand, count=1000)
+    excessive_body = batch_body(140, number_of_dates=31, start='00:00', end='24:00', weekdays=list(range(1, 8)))
+    post_batch(excessive_body, 400, error='INVALID_AVAILABILITY_REQUEST')
+    assert read_generated_day(140)['totalElements'] == 0
+
+    fixture('next-mutation', delayMs=250)
+    started_batch = monotonic()
+    delayed_batch = post_batch(batch_body(17))
+    assert monotonic() - started_batch >= 0.2
+    verify_batch_receipt(delayed_batch, count=2)
+    fixture('next-mutation', drop=True)
+    dropped_mutation(batch_path, batch_body(18), 'response-dropped-after-availability-batch-created',
+                     token=token('ADMINISTRATOR'))
+    assert read_generated_day(18)['totalElements'] == 2
+
+    # Deliberately broken transport receipts are not claimed as OpenAPI-conformant responses.
+    for offset, mode in [(20, 'empty'), (21, 'invalid-json'), (22, 'timeout')]:
+        fixture('next-mutation', responseMode=mode)
+        req = Request(args.base_url.rstrip('/') + batch_path, data=json.dumps(batch_body(offset)).encode(),
+                      headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token('ADMINISTRATOR')}, method='POST')
+        try:
+            response = urlopen(req, timeout=10)
+        except HTTPError as error:
+            response = error
+        with response:
+            expected = 408 if mode == 'timeout' else 201
+            assert response.status == expected and response.headers.get('Cache-Control') == 'no-store'
+            raw = response.read()
+            if mode == 'empty':
+                assert raw == b''
+            elif mode == 'invalid-json':
+                try:
+                    json.loads(raw)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    raise AssertionError('El cuerpo de prueba debe ser JSON inválido')
+            else:
+                failure = json.loads(raw)
+                assert failure['errorCode'] == 'SIMULATION_RESPONSE_TIMEOUT'
+                Draft202012Validator({'$ref': '#/components/schemas/ApiErrorResponseDTO', 'components': spec['components']},
+                                     format_checker=FormatChecker()).validate(failure)
+            checks.append({'method': 'POST', 'path': batch_path, 'status': response.status, 'schemaValidated': False,
+                           'injectedFailure': 'response-' + mode + '-after-availability-batch-created'})
+        assert read_generated_day(offset)['totalElements'] == 2
 
     for role, destination in [('OWNER', '/users/me'), ('SUPER_ADMIN', '/administrators'),
                               ('ADMINISTRATOR', '/veterinarians'), ('VETERINARIAN', '/appointments' + date_query)]:

@@ -28,6 +28,8 @@ El alcance modelado es:
 - Agenda con fechas locales inclusivas de Bogotá, máximo 31 días y ámbito
   propio/asignado/global según el rol. Las citas ficticias se muestran en la
   fecha de Bogotá calculada durante la consulta.
+- Disponibilidad administrativa: turnos individuales, cambios de hora/estado,
+  historial y generación de lotes completos con rechazo de colisiones.
 
 Las operaciones restantes devuelven **501 SIMULATION_ENDPOINT_NOT_MODELED**.
 No se simulan creación o edición de mascotas, fotos,
@@ -106,6 +108,8 @@ Los registros y el PID permanecen en `postman/.runtime/`, ignorado por Git:
 - `roles.ndjson`: eventos de la simulación y peticiones HTTP.
 - `roles.err`: avisos y errores de arranque.
 - `http-verification.json`: resultados de la comprobación HTTP, sin tokens.
+- `availability-batch-client-http.json`: comprobación del cliente real de lotes
+  sobre HTTP local, sin tokens ni cuerpos de autenticación.
 
 Estos registros solo contienen datos ficticios en este uso. No deben
 versionarse ni reutilizarse para capturar credenciales reales.
@@ -248,7 +252,7 @@ El mismo sustituto incorpora las operaciones existentes de disponibilidad de
 publicar un turno; consultar detalle; mover su hora; bloquear/republicar; y
 consultar los eventos paginados. El contrato y los DTO provienen del backend
 local y del OpenAPI canónico 0.9.0. La generación por lotes queda fuera de este
-bloque y no se simula como si estuviera entregada.
+bloque individual y se describe en la sección siguiente.
 
 Solo `ADMINISTRATOR` con `VETERINARIAN_AVAILABILITY_MANAGE` escribe o consulta
 eventos. `VETERINARIAN` consulta únicamente su agenda; OWNER usa las opciones
@@ -269,13 +273,13 @@ refleja publicaciones, bloqueos, ocupación y estado del profesional.
 Al reiniciar, `veterinarian@roles.test` tiene estos turnos ficticios, con horas
 de Bogotá:
 
-| Momento | Estado de prueba | Sufijo de UUID |
-| --- | --- | --- |
-| Mañana 09:00 | Publicado y libre | `000000000001` |
-| Mañana 09:30 | Bloqueado, versión 1 | `000000000002` |
-| Mañana 10:00 | Publicado, ocupado y con referencia histórica | `000000000003` |
+| Momento      | Estado de prueba                               | Sufijo de UUID |
+| ------------ | ---------------------------------------------- | -------------- |
+| Mañana 09:00 | Publicado y libre                              | `000000000001` |
+| Mañana 09:30 | Bloqueado, versión 1                           | `000000000002` |
+| Mañana 10:00 | Publicado, ocupado y con referencia histórica  | `000000000003` |
 | Mañana 10:30 | Publicado, únicamente con referencia histórica | `000000000004` |
-| Ayer 09:00 | Publicado, pasado y no editable | `000000000005` |
+| Ayer 09:00   | Publicado, pasado y no editable                | `000000000005` |
 
 Los UUID completos usan el prefijo `f1000000-0000-4000-8000-`. Otro veterinario
 activo tiene un turno independiente para comprobar el aislamiento por agenda.
@@ -284,18 +288,75 @@ citas creadas ni restricciones de una base de datos real.
 
 Controles exclusivos del entorno local:
 
-| Ruta o cuerpo de fixture | Uso |
-| --- | --- |
-| `GET /api/__simulation/availability?email=veterinarian%40roles.test` | Devuelve los turnos e indicadores de ocupación/historia para preparar escenarios. Estos indicadores no se añaden al DTO de producto. |
+| Ruta o cuerpo de fixture                                                                                                          | Uso                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/__simulation/availability?email=veterinarian%40roles.test`                                                              | Devuelve los turnos e indicadores de ocupación/historia para preparar escenarios. Estos indicadores no se añaden al DTO de producto.                                                                       |
 | `POST /api/__simulation/fixture` con `{"action":"availability-state","slotId":"UUID ficticio","occupied":true,"referenced":true}` | Marca el turno ficticio como ocupado y referenciado. Para dejar únicamente historia, usar `occupied:false, referenced:true`; ambos `false` retiran esas guardas de prueba. Una ocupación exige referencia. |
-| `{"action":"next-mutation","drop":true}` | Después de una escritura válida de disponibilidad, conserva el cambio y corta su respuesta. El proxy devuelve 502; consultar la agenda o el detalle antes de decidir otro envío. |
-| `{"action":"next-mutation","delayMs":5000}` | Demora la respuesta posterior a una escritura válida, para probar envío repetido y cambio de sesión en la aplicación. |
+| `{"action":"next-mutation","drop":true}`                                                                                          | Después de una escritura válida de disponibilidad, conserva el cambio y corta su respuesta. El proxy devuelve 502; consultar la agenda o el detalle antes de decidir otro envío.                           |
+| `{"action":"next-mutation","delayMs":5000}`                                                                                       | Demora la respuesta posterior a una escritura válida, para probar envío repetido y cambio de sesión en la aplicación.                                                                                      |
 
 El fixture no sustituye las pruebas PostgreSQL de ocupación, historial,
 transacciones o concurrencia. El interceptor recibe JSON ya interpretado: se
 comprueba el valor entero de `expectedVersion`, pero no se acredita aquí la
 distinción léxica entre `1`, `1.0` y `1e0` que valida el parser real del backend.
 No hay DELETE de turnos y ninguna fixture pertenece al cliente ni al OpenAPI.
+
+## Generación por lotes — SCRUM-37
+
+`POST /veterinarians/{veterinarianId}/availability-slot-batches` usa exactamente
+los cinco campos del DTO real: `startDate`, `endDate`, `daysOfWeek`,
+`dailyStartTime` y `dailyEndTime`. La respuesta 201 contiene
+`{createdCount, items, timeZone}` con los turnos completos, publicados y en
+versión cero; este recibo no tiene cabecera `Location`. No es una página.
+Solo escribe ADMINISTRATOR con el permiso de gestión de disponibilidad y el
+veterinario debe estar activo.
+
+El rango incluye de 1 a 31 fechas locales. Los días ISO son enteros únicos
+del 1 (lunes) al 7 (domingo). Las horas usan la cuadrícula de 30 minutos;
+`24:00` solo es un fin exclusivo. El resultado debe contener entre 1 y 1000
+turnos, todos con inicio futuro. Una fecha pasada dentro del rango no impide
+el lote si los días seleccionados la excluyen y todos los inicios generados
+son futuros. Administración no hereda el horizonte de 60 días del propietario.
+
+La simulación calcula y valida todo antes de escribir turnos o eventos. Una
+colisión, incluso con un turno bloqueado, devuelve 409
+`AVAILABILITY_SLOT_CONFLICT` y no deja creaciones parciales. Cada turno creado
+añade un evento CREATED. Fechas/horas incompatibles, duplicados de días, un
+resultado vacío, pasado o superior al máximo producen 400
+`INVALID_AVAILABILITY_REQUEST`. Los errores de estructura y tipos conservan
+los códigos del backend. Esta comprobación en memoria no sustituye las
+pruebas de transacciones, restricciones y concurrencia de PostgreSQL.
+
+La operación no tiene idempotencia. Para ensayar recibos inciertos, estas
+fixtures de prueba alteran la respuesta **después de aplicar el lote completo**:
+
+| Cuerpo de `POST /api/__simulation/fixture`                 | Resultado controlado                       |
+| ---------------------------------------------------------- | ------------------------------------------ |
+| `{"action":"next-mutation","drop":true}`                   | Corte que Postman traduce a 502 del proxy. |
+| `{"action":"next-mutation","delayMs":5000}`                | Respuesta demorada; máximo 10 segundos.    |
+| `{"action":"next-mutation","responseMode":"empty"}`        | 201 sin cuerpo.                            |
+| `{"action":"next-mutation","responseMode":"invalid-json"}` | 201 con JSON incompleto.                   |
+| `{"action":"next-mutation","responseMode":"timeout"}`      | 408 `SIMULATION_RESPONSE_TIMEOUT`.         |
+
+Los recibos rotos y el 408 son fallos inyectados del entorno, no respuestas
+conformes atribuidas al endpoint. El control se consume al responder a la
+siguiente mutación válida, no exclusivamente a un lote. Para comprobar qué
+se aplicó, consultar la agenda en el mismo rango, sin filtro de estado y
+recorriendo todas las páginas; no reenviar automáticamente el POST.
+
+Además del verificador Python, el cliente TypeScript real tiene este recorrido
+HTTP reproducible:
+
+```powershell
+node postman/scripts/verify_availability_batch_client_http.mjs
+```
+
+Compila el cliente actual con esbuild y usa únicamente la simulación 4900.
+Comprueba el fin `24:00`, colisión tardía sin creaciones parciales y la
+consulta de un lote de 144 turnos en dos páginas tras perder su respuesta,
+además de recibos vacíos, JSON inválido y 408. El informe saneado queda en
+`postman/.runtime/availability-batch-client-http.json`. Reinicia las cuentas
+ficticias al empezar y terminar; no ejecutarlo durante un recorrido del navegador.
 
 ## Comprobación HTTP y validación del contrato
 
@@ -310,20 +371,24 @@ python -X utf8 .\postman\scripts\verify_roles_http.py `
 El script solo admite el puerto de simulación 4900 y rechaza destinos remotos y otros gateways locales. Comprueba login de los cuatro roles,
 coherencia de claims, DTOs mediante JSON Schema, límites de páginas y fechas,
 errores 400/401/403/404/409/429/503, altas, edición, estados, invitaciones,
-activación, recuperación, disponibilidad individual, aislamiento y revocación.
-La ejecución del **23/10/2026** con disponibilidad verificó **243 peticiones
-HTTP**, **205** con respuesta/estado validados contra OpenAPI 0.9.0. Incluye
-los recorridos anteriores; no son 243 pruebas nuevas. El resto incluye fixtures
+activación, recuperación, disponibilidad individual y por lotes, aislamiento y
+revocación. La ejecución del **23/10/2026** con lotes verificó **303 peticiones
+HTTP**, **256** con respuesta/estado validados contra el snapshot vivo de
+OpenAPI 0.9.0 guardado en `output/frontend-lotes-2026-10-23/openapi-live.json`
+del directorio GrownupsVet. Incluye los recorridos anteriores; no son 303
+pruebas nuevas. El resto incluye fixtures
 y cortes controlados identificados, que no se presentan como respuestas del
 contrato. El informe saneado quedó en
-`C:\Users\ASUS\Documents\ChatGPT\GrownupsVet\output\frontend-disponibilidad-2026-10-23\http-verification.json`.
+`C:\Users\ASUS\Documents\ChatGPT\GrownupsVet\output\frontend-lotes-2026-10-23\http-verification.json`.
+El corte anterior de disponibilidad individual verificó 243 peticiones y
+205 respuestas/estados contra el contrato.
 La cifra es una observación de esa ejecución: la prueba de publicación para
 el día actual se omite si ya no queda un turno futuro en la cuadrícula de ese
 día. El corte anterior del 22/10 de personal verificó 94 peticiones.
 Estas cifras se mantienen separadas de las pruebas unitarias y recorridos
 del navegador. La ruta
 `POST /api/__simulation/reset` se usa únicamente para reiniciar las sesiones
-del mock al principio: **no pertenece al contrato del backend**.
+del mock al principio y al terminar: **no pertenece al contrato del backend**.
 
 Esta comprobación acredita el comportamiento del stand-in y sus respuestas
 contra el contrato. Para acreditar integración del frontend hay que ejecutar

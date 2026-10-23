@@ -3,6 +3,9 @@
 Sitio publicado: [grownupsvet-frontend.pages.dev](https://grownupsvet-frontend.pages.dev).
 La [verificación de publicación](docs/publicacion-cloudflare-2026-10-23.md)
 identifica el commit, el despliegue y los límites de las comprobaciones reales.
+El incremento de [disponibilidad por lotes](docs/verificacion-lotes-disponibilidad-2026-10-23.md)
+está implementado y verificado localmente; su publicación sigue pendiente.
+El informe enlazado de publicación conserva el alcance del despliegue anterior.
 
 Aplicación web adaptable a computador y celular con Expo SDK 57, React Native
 Web y TypeScript. Usa un solo runtime, un navegador raíz, un login y una sesión
@@ -12,12 +15,12 @@ correo. El backend autoriza cada operación.
 
 ## Alcance implementado
 
-| Rol             | Área inicial    | Capacidades de la interfaz                                                                          |
-| --------------- | --------------- | --------------------------------------------------------------------------------------------------- |
-| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                         |
-| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                 |
-| `ADMINISTRATOR` | Veterinarios    | Gestión de cuentas y perfil profesional base; consulta, publicación, cambio de hora, bloqueo/republicación e historial de turnos individuales. |
-| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                    |
+| Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                   |
+| --------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OWNER`         | Mis mascotas    | Mascotas, citas, avisos de citas y perfil, según los permisos de la sesión.                                                                  |
+| `SUPER_ADMIN`   | Administradores | Listado paginado, detalle, alta, edición, estado e invitaciones de administradores.                                                          |
+| `ADMINISTRATOR` | Veterinarios    | Gestión de cuentas y perfil profesional base; disponibilidad individual, publicación por lotes, bloqueo/republicación e historial de turnos. |
+| `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                             |
 
 El acceso público incluye login, registro de propietarios, recuperación de
 contraseña en tres pasos y activación de personal mediante invitación. Login,
@@ -59,14 +62,31 @@ America/Bogota. Un conflicto conserva la reserva y un resultado incierto exige
 consultar antes de decidir otro envío. Requiere el permiso específico de
 disponibilidad; no se concede a otros roles por herencia.
 
+Desde esa agenda también puede **Generar lote de turnos**: selecciona entre
+1 y 31 fechas inclusivas, días de la semana y una franja diaria dividida en turnos de 30 minutos,
+con fin exclusivo y `24:00` permitido al terminar la jornada. La vista previa
+muestra fechas y cantidad, hasta 1000 turnos, antes de confirmar. El contrato
+rechaza todo el lote si hay una colisión, incluso con un turno bloqueado.
+Administración puede generar cualquier inicio futuro; no usa la ventana del
+propietario de mañana a 60 días. Un resultado incierto bloquea otro envío y
+ofrece consultar todas las fechas y páginas, sin filtro de estado. Esa lectura
+muestra la agenda vigente y no prueba qué intento creó los turnos encontrados.
+
 ## Validación y pendientes
 
-La [verificación de disponibilidad del 23/10/2026](docs/verificacion-disponibilidad-2026-10-23.md)
-registra TypeScript, ESLint, **390 pruebas en 35 archivos**, exportación web y
-recorridos locales con simulación del contrato OpenAPI 0.9.0. Incluye agenda
-individual, confirmaciones, versiones, historial, reservas protegidas y
-reconciliación tras una respuesta perdida. Distingue las pruebas del proyecto,
-las comprobaciones HTTP y los recorridos observados en navegador.
+La [verificación de lotes del 23/10/2026](docs/verificacion-lotes-disponibilidad-2026-10-23.md)
+registra TypeScript, ESLint, **446 pruebas en 38 archivos**, exportación web y
+recorridos locales con simulación del contrato OpenAPI 0.9.0. Incluye 56 casos
+nuevos de calendario/límites, contrato y presentación, además de publicación,
+colisión atómica, resultado incierto y consulta completa de 144 horarios en
+dos páginas. Distingue las 303 peticiones del verificador HTTP, las seis
+comprobaciones del cliente real y los recorridos de navegador. Se comprobaron
+checkbox por teclado, foco, confirmaciones y presentación móvil a 390 px.
+
+La [verificación individual anterior](docs/verificacion-disponibilidad-2026-10-23.md)
+conserva su corte de **390 pruebas en 35 archivos**, agenda individual,
+versiones, historial, reservas protegidas y reconciliación. La publicación
+del incremento de lotes todavía requiere su propio commit y despliegue.
 
 La [continuidad anterior del mismo día](docs/verificacion-continuidad-frontend-2026-10-23.md)
 conserva la evidencia de recuperación, resultados inciertos, páginas
@@ -82,12 +102,13 @@ aceptación del servicio real. Continúan pendientes:
   y su almacenamiento y lectura mediante el backend. Se comprobó el
   transporte binario del cliente y su aislamiento entre sesiones.
 - Aceptación completa de creación de citas y concurrencia contra el servicio
-  real; pruebas de Android/iOS, instalación y uso sin conexión de la PWA.
+  real, incluida la atomicidad de lotes sobre PostgreSQL; pruebas de
+  Android/iOS, instalación y uso sin conexión de la PWA.
 - Evaluación integral de accesibilidad con lector de pantalla y personas
   usuarias. Las comprobaciones existentes no constituyen una certificación.
 
-No se incluyen generación de turnos por lotes, gestión administrativa de
-citas, cancelación o reprogramación por el propietario, atención clínica,
+No se incluyen gestión administrativa de citas, cancelación o reprogramación
+por el propietario, atención clínica,
 títulos adicionales ni archivos de diplomas. La agenda del rol veterinario
 es de consulta.
 
@@ -102,7 +123,7 @@ conservan la evidencia de los incrementos anteriores y sus límites.
 grownupsvet-frontend/
   apps/
     propietario/       Mascotas, citas, avisos y perfil
-    administrativo/    Personal, disponibilidad individual y agenda por rol
+    administrativo/    Personal, disponibilidad individual/lotes y agenda por rol
   src/
     navigation/        Navegación raíz y entrada de activación
     screens/auth/      Login, registro, recuperación y activación
