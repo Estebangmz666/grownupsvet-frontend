@@ -3,4 +3,8 @@
   "name": "grownupsvet-frontend",
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-10-21",
+  "vars": {
+    "NODE_VERSION": "22.18.0",
+    "SKIP_DEPENDENCY_INSTALL": "1",
+  },
 }

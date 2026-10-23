@@ -1,5 +1,9 @@
 # GrownupsVet frontend
 
+Sitio publicado: [grownupsvet-frontend.pages.dev](https://grownupsvet-frontend.pages.dev).
+La [verificación de publicación](docs/publicacion-cloudflare-2026-10-23.md)
+identifica el commit, el despliegue y los límites de las comprobaciones reales.
+
 Aplicación web adaptable a computador y celular con Expo SDK 57, React Native
 Web y TypeScript. Usa un solo runtime, un navegador raíz, un login y una sesión
 común. El rol y los permisos recibidos del backend determinan las vistas
@@ -177,8 +181,9 @@ excluyen `node_modules`, `dist`, `.wrangler` y los registros locales Postman.
 
 ## Publicar con Cloudflare Pages y Git
 
-La vía de publicación prevista es la integración Git de **Cloudflare Pages**
-con el repositorio propio. La rama de producción es **`main`**:
+La publicación utiliza la integración Git de **Cloudflare Pages** con
+[Estebangmz666/grownupsvet-frontend](https://github.com/Estebangmz666/grownupsvet-frontend).
+La rama de producción es **`main`**:
 
 | Campo de Pages            | Configuración                                                       |
 | ------------------------- | ------------------------------------------------------------------- |
@@ -190,8 +195,10 @@ con el repositorio propio. La rama de producción es **`main`**:
 | `NODE_VERSION`            | `22.18.0`                                                           |
 | `SKIP_DEPENDENCY_INSTALL` | `1`, ya que el comando anterior instala desde el lockfile.          |
 
-Comprueba que el proyecto elegido coincida con `wrangler.jsonc`; su nombre
-local no acredita que exista un proyecto remoto. Conserva la base web
+El proyecto es `grownupsvet-frontend`. `wrangler.jsonc` versiona su nombre,
+salida, compatibilidad y las dos variables de compilación de la tabla.
+Al usar ese archivo, esas variables se mantienen allí como fuente de configuración.
+Conserva la base web
 `/api/v1`, comprueba el `UPSTREAM` real y deja `PWA_DEV_ORIGINS` vacío en
 producción. La guía técnica del gateway está en [proxy/README.md](proxy/README.md).
 
@@ -208,8 +215,8 @@ ese despliegue no reemplaza la versión publicada.
 Publicar la exportación sin su worker no proporciona el gateway de API. Tras
 publicar, comprueba HTTPS, carga de recursos, cabeceras de `/api/v1` y la ruta
 `/activate-account`. La aceptación de login e invitaciones con cuentas reales
-requiere su propia comprobación. Este README no presupone un dominio público
-ni un despliegue exitoso.
+requiere su propia comprobación. El informe de publicación conserva la evidencia
+del despliegue observado; no sustituye la aceptación de los flujos autenticados.
 
 El service worker conserva únicamente el shell y recursos estáticos
 admitidos del mismo origen. Excluye rutas API y peticiones de recursos con
