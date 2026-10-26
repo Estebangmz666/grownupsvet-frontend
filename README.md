@@ -16,7 +16,10 @@ correo. El backend autoriza cada operación.
 
 ## Estado de la entrega para auditoría
 
-Corte documental: **26 de octubre de 2026**. El repositorio y la rama de
+Corte de hoy: **26 de octubre de 2026, America/Bogota**. La evaluación es
+**parcial: P1/P2 web y P3 API publicado/verificado**. No constituye la entrega
+final completa; la auditoría integral del proyecto debe esperar la
+finalización de la versión final. El repositorio y la rama de
 referencia son [Estebangmz666/grownupsvet-frontend, main](https://github.com/Estebangmz666/grownupsvet-frontend/tree/main).
 Cada evaluación debe identificar el commit frontend y la revisión backend
 efectivamente desplegados; un cambio de estas fuentes requiere su propia

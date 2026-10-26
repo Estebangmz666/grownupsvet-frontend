@@ -1,6 +1,9 @@
 # Pendientes del proyecto
 
-Actualizado el **26 de octubre de 2026**. Los informes fechados conservan el
+Actualizado a hoy: **26 de octubre de 2026, America/Bogota**. Alcance parcial:
+**P1/P2 web y P3 API publicado/verificado**. No es la entrega final completa.
+La auditoría integral del proyecto debe esperar la finalización de la versión
+final. Los informes fechados conservan el
 resultado y los límites de su propio corte; este documento resume el alcance
 vigente y no reemplaza esas evidencias.
 
