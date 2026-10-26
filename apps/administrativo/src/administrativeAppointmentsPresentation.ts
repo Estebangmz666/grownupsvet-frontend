@@ -199,6 +199,7 @@ const eventLabels: Record<AppointmentEventType, string> = {
   REJECTED: "Cita rechazada",
   CANCELLED: "Cita cancelada",
   NO_SHOW: "Inasistencia registrada",
+  COMPLETED: "Cita completada",
   RESCHEDULED: "Cita reprogramada",
   DAILY_CUTOFF: "Cierre automático de solicitudes",
   VETERINARIAN_DISABLED: "Veterinario deshabilitado",

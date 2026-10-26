@@ -36,7 +36,12 @@ export interface Pet {
 }
 
 export type AppointmentStatus =
-  "REQUESTED" | "CONFIRMED" | "REJECTED" | "CANCELLED" | "NO_SHOW";
+  | "REQUESTED"
+  | "CONFIRMED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "NO_SHOW"
+  | "COMPLETED";
 export type AppointmentAssignmentStatus = "ASSIGNED" | "NEEDS_REASSIGNMENT";
 
 export interface Appointment {
@@ -65,6 +70,7 @@ export type AppointmentEventType =
   | "REJECTED"
   | "CANCELLED"
   | "NO_SHOW"
+  | "COMPLETED"
   | "RESCHEDULED"
   | "DAILY_CUTOFF"
   | "VETERINARIAN_DISABLED"

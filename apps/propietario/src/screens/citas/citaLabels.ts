@@ -6,6 +6,7 @@ export const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   REJECTED: "Rechazada",
   CANCELLED: "Cancelada",
   NO_SHOW: "No asististe",
+  COMPLETED: "Completada",
 };
 
 export function getStatusLabel(status: string): string {

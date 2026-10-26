@@ -76,6 +76,7 @@ const appointmentStatusLabels: Record<string, string> = {
   REJECTED: "Rechazada",
   CANCELLED: "Cancelada",
   NO_SHOW: "No asistió",
+  COMPLETED: "Completada",
 };
 
 export function accountStatusLabel(status: string): string {

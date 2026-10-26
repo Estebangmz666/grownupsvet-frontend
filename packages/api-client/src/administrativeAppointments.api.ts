@@ -33,6 +33,7 @@ const statuses = new Set([
   "REJECTED",
   "CANCELLED",
   "NO_SHOW",
+  "COMPLETED",
 ]);
 const assignments = new Set(["ASSIGNED", "NEEDS_REASSIGNMENT"]);
 const eventTypes = new Set([
@@ -41,6 +42,7 @@ const eventTypes = new Set([
   "REJECTED",
   "CANCELLED",
   "NO_SHOW",
+  "COMPLETED",
   "RESCHEDULED",
   "DAILY_CUTOFF",
   "VETERINARIAN_DISABLED",

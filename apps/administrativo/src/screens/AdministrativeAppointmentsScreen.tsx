@@ -43,6 +43,7 @@ const appointmentStatuses: Array<AppointmentStatus | undefined> = [
   "REJECTED",
   "CANCELLED",
   "NO_SHOW",
+  "COMPLETED",
 ];
 
 export function AdministrativeAppointmentsScreen({
