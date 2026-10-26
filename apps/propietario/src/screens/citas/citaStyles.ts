@@ -174,6 +174,10 @@ export const statusBadgeStyle: Record<AppointmentStatus, StatusBadge> = {
     backgroundColor: colors.successBackground,
     color: colors.success,
   },
+  COMPLETED: {
+    backgroundColor: colors.successBackground,
+    color: colors.success,
+  },
   REJECTED: neutralBadge,
   CANCELLED: neutralBadge,
   NO_SHOW: neutralBadge,

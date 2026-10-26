@@ -165,7 +165,12 @@ describe("administrative appointment change eligibility", () => {
     ).toBe(false);
   });
   it("does not offer a move for terminal states or without destination permissions", () => {
-    for (const status of ["CANCELLED", "REJECTED", "NO_SHOW"] as const) {
+    for (const status of [
+      "CANCELLED",
+      "REJECTED",
+      "NO_SHOW",
+      "COMPLETED",
+    ] as const) {
       expect(
         administrativeAppointmentChangeEligibility(
           { ...appointment, status },

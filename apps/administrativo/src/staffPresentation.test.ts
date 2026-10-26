@@ -38,5 +38,6 @@ describe("staff calendar and presentation", () => {
     expect(accountStatusLabel("UNKNOWN")).toBe("Estado no disponible");
     expect(appointmentStatusLabel("UNKNOWN")).toBe("Estado no disponible");
     expect(appointmentStatusLabel("NO_SHOW")).toBe("No asistió");
+    expect(appointmentStatusLabel("COMPLETED")).toBe("Completada");
   });
 });

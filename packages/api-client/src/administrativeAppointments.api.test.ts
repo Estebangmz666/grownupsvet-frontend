@@ -93,6 +93,47 @@ afterEach(() => {
 });
 
 describe("administrative appointment reads", () => {
+  it("accepts completed detail and a completed-only page without weakening unknown-state validation", async () => {
+    const completed = { ...appointment, status: "COMPLETED" };
+    fetchMock.mockResolvedValueOnce(jsonResponse(completed));
+    expect(await getAdministrativeAppointment(appointmentId, context)).toEqual(
+      completed,
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([completed])));
+    expect(
+      (
+        await listAdministrativeAppointments(
+          { ...params, status: "COMPLETED" },
+          context,
+        )
+      ).items,
+    ).toEqual([completed]);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("status=COMPLETED");
+    expect(() =>
+      parseAdministrativeAppointmentResponse({
+        ...completed,
+        status: "UNKNOWN",
+      }),
+    ).toThrow();
+  });
+
+  it("reads a clinical completion event in the existing administrative history", async () => {
+    const completedEvent = {
+      ...event,
+      eventType: "COMPLETED",
+      actorType: "HUMAN",
+      actorId: veterinarianId,
+      previousStatus: "CONFIRMED",
+      newStatus: "COMPLETED",
+      reason: "Atención clínica finalizada.",
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(page([completedEvent])));
+    expect(
+      (await listAdministrativeAppointmentEvents(appointmentId, {}, context))
+        .items,
+    ).toEqual([completedEvent]);
+  });
+
   it("uses only the existing filters and accepts the exact 31-date boundary", () => {
     expect(
       Object.fromEntries(
@@ -261,6 +302,20 @@ describe("administrative appointment reads", () => {
 });
 
 describe("administrative request review", () => {
+  it("never sends COMPLETED as an administrative status transition", async () => {
+    await expect(
+      updateAdministrativeAppointmentStatus(
+        appointmentId,
+        {
+          status: "COMPLETED",
+          expectedVersion: 4,
+        } as unknown as UpdateAdministrativeAppointmentStatusRequestDTO,
+        context,
+      ),
+    ).rejects.toThrow(RangeError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("normalizes only Java whitespace at the edges and preserves internal content", () => {
     const whitespace =
       "\u0009\u000a\u000b\u000c\u000d\u001c\u001d\u001e\u001f\u0020\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2008\u2009\u200a\u2028\u2029\u205f\u3000";

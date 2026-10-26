@@ -6,6 +6,7 @@ import {
 } from "@grownupsvet/api-client";
 import {
   administrativeAppointmentAssignmentLabel,
+  administrativeAppointmentEventLabel,
   administrativeAppointmentEligibility,
   administrativeAppointmentOperationError,
   administrativeAppointmentPermissions,
@@ -48,6 +49,12 @@ const failure = (status: number, errorCode = "ERROR") =>
   new ApiError({ status, errorCode, fieldErrors: [] });
 
 describe("administrative appointment permissions and decisions", () => {
+  it("labels the completion event without exposing a clinical action", () => {
+    expect(administrativeAppointmentEventLabel("COMPLETED")).toBe(
+      "Cita completada",
+    );
+  });
+
   it("requires the administrator role and the separate read and manage permissions", () => {
     expect(
       administrativeAppointmentPermissions(
@@ -117,18 +124,21 @@ describe("administrative appointment permissions and decisions", () => {
       ).toEqual({ canConfirm: false, canReject: true });
     },
   );
-  it.each(["CONFIRMED", "REJECTED", "CANCELLED", "NO_SHOW"] as const)(
-    "does not offer either decision for %s",
-    (status) => {
-      expect(
-        administrativeAppointmentEligibility(
-          { ...appointment, status },
-          true,
-          now,
-        ),
-      ).toEqual({ canConfirm: false, canReject: false });
-    },
-  );
+  it.each([
+    "CONFIRMED",
+    "REJECTED",
+    "CANCELLED",
+    "NO_SHOW",
+    "COMPLETED",
+  ] as const)("does not offer either decision for %s", (status) => {
+    expect(
+      administrativeAppointmentEligibility(
+        { ...appointment, status },
+        true,
+        now,
+      ),
+    ).toEqual({ canConfirm: false, canReject: false });
+  });
   it("keeps consultation access read only", () => {
     expect(
       administrativeAppointmentEligibility(appointment, false, now),
