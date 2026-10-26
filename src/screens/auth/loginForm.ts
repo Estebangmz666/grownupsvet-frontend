@@ -41,16 +41,15 @@ export function loginFailure(error: unknown): {
 } {
   const fields: LoginFormFieldErrors = {};
   if (error instanceof ApiError) {
+    if (error.status === 429)
+      return {
+        message: loginRateLimitMessage(error.retryAfterSeconds),
+        fields,
+      };
     if (error.status === 401 || error.errorCode === "INVALID_CREDENTIALS")
       return {
         message:
           "No pudimos iniciar sesión con esos datos. Revisa el correo y la contraseña o usa «Olvidé mi contraseña».",
-        fields,
-      };
-    if (error.status === 429)
-      return {
-        message:
-          "Hay demasiados intentos. Espera un momento antes de volver a iniciar sesión.",
         fields,
       };
     if (error.status === 400) {
@@ -77,4 +76,22 @@ export function loginFailure(error: unknown): {
       "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo. Conservamos los datos que escribiste.",
     fields,
   };
+}
+
+function loginRateLimitMessage(retryAfterSeconds: number | undefined): string {
+  if (
+    retryAfterSeconds === undefined ||
+    !Number.isSafeInteger(retryAfterSeconds) ||
+    retryAfterSeconds <= 0
+  )
+    return "Hay demasiados intentos. Espera un momento antes de volver a iniciar sesión. Conservamos el correo y la contraseña que escribiste.";
+  const minutes = Math.floor(retryAfterSeconds / 60);
+  const seconds = retryAfterSeconds % 60;
+  const duration = [
+    minutes > 0 ? `${minutes} ${minutes === 1 ? "minuto" : "minutos"}` : "",
+    seconds > 0 ? `${seconds} ${seconds === 1 ? "segundo" : "segundos"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" y ");
+  return `Hay demasiados intentos. Espera al menos ${duration} antes de volver a iniciar sesión. Conservamos el correo y la contraseña que escribiste.`;
 }

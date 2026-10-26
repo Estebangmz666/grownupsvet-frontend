@@ -14,6 +14,24 @@ común. El rol y los permisos recibidos del backend determinan las vistas
 disponibles; la interfaz no solicita elegir un rol ni concede permisos por el
 correo. El backend autoriza cada operación.
 
+## Estado de la entrega para auditoría
+
+Corte documental: **26 de octubre de 2026**. El repositorio y la rama de
+referencia son [Estebangmz666/grownupsvet-frontend, main](https://github.com/Estebangmz666/grownupsvet-frontend/tree/main).
+Cada evaluación debe identificar el commit frontend y la revisión backend
+efectivamente desplegados; un cambio de estas fuentes requiere su propia
+publicación y comprobación.
+
+El backend dispone de [API de atención clínica, tratamiento, finalización e historia](https://github.com/Estebangmz666/grownupsvet-backend/blob/main/docs/atenciones-clinicas.md).
+El frontend reconoce las citas `COMPLETED`, pero las pantallas clínicas P3
+siguen pendientes y quedan fuera de este incremento P1/P2. La aceptación
+de la API clínica no acredita una interfaz clínica ni el recorrido completo
+de los tres procesos.
+
+Las [plantillas de correo del backend ya se implementaron y verificaron](https://github.com/Estebangmz666/grownupsvet-backend/blob/main/docs/verificacion-plantillas-correo-2026-10-23.md).
+Su verificación de composición y transporte aislado se distingue de la
+recepción en un buzón real y de la aceptación del flujo publicado.
+
 ## Alcance implementado
 
 | Rol             | Área inicial    | Capacidades de la interfaz                                                                                                                                       |
@@ -23,11 +41,20 @@ correo. El backend autoriza cada operación.
 | `ADMINISTRATOR` | Administración  | Gestión de veterinarios, formación/diplomas y disponibilidad; agenda e historial de citas, decisiones, reprogramación y reemplazo de veterinario según permisos. |
 | `VETERINARIAN`  | Mi agenda       | Consulta de las citas asignadas del día seleccionado en el calendario de Bogotá.                                                                                 |
 
+Todos los roles ingresan por [el mismo sitio publicado](https://grownupsvet-frontend.pages.dev/)
+y el mismo formulario de acceso. No hay una URL de login distinta para cada
+portal; las áreas de la tabla se habilitan con los permisos de la sesión.
+
 El acceso público incluye login, registro de propietarios, recuperación de
 contraseña en tres pasos y activación de personal mediante invitación. Login,
 registro y recuperación comparten etiquetas, ayudas y errores asociados,
 mostrar/ocultar contraseña, autocompletado, foco y operación por teclado. Los
 formularios permanecen visibles mientras envían y evitan envíos repetidos.
+Ante HTTP 429, el acceso muestra en español la espera indicada por
+`Retry-After`, cuando es válida, y conserva correo y contraseña. El cliente
+no reenvía automáticamente las credenciales. La limitación la decide el
+servidor y puede agrupar conexiones de un proxy o NAT; no identifica por sí
+sola una persona ni modifica los permisos de acceso.
 Registro y recuperación muestran su resultado antes de volver al login. Un
 resultado incierto de cambio de contraseña o activación bloquea otro envío
 desde esa pantalla y orienta a comprobar el acceso mediante login.
@@ -198,14 +225,11 @@ aceptación del servicio real. Continúan pendientes:
   Android/iOS, instalación y uso sin conexión de la PWA.
 - Evaluación integral de accesibilidad con lector de pantalla y personas
   usuarias. Las comprobaciones existentes no constituyen una certificación.
-- [Mejora de las plantillas de correo del backend](docs/pendientes-proyecto.md),
-  pendiente recordado por el usuario el 23/10/2026.
 
-P3 está **fuera del alcance de esta entrega**, según la aclaración expresa
-del usuario del 23/10/2026. Las atenciones, fórmulas, controles y demás
-operaciones clínicas de esa fase no son pendientes del frontend P1/P2 ni
-bloquean su cierre. No se incluyen cancelación/reprogramación por el
-propietario. La agenda del rol veterinario es de consulta.
+El [estado de pendientes](docs/pendientes-proyecto.md) conserva el alcance
+vigente y separa la aceptación P1/P2 de la interfaz clínica pendiente. No se
+incluyen cancelación/reprogramación por el propietario. La agenda del rol
+veterinario es de consulta.
 
 Las [vistas por rol](docs/verificacion-vistas-por-rol-2026-10-22.md), la
 [gestión administrativa](docs/verificacion-incremento-administrativo-1-2026-10-22.md)
@@ -323,6 +347,8 @@ ramas y en pull requests. Solo adjunta `dist` si el trabajo termina
 correctamente. **No usa credenciales de Cloudflare ni despliega**; Pages
 gestiona la publicación mediante su integración Git. Evita habilitar otra vía
 automática que publique el mismo cambio dos veces.
+El artefacto `web-dist` se conserva durante **30 días**; su existencia acredita
+el build correspondiente, no la aceptación de los recorridos autenticados.
 
 Pages ejecuta sus propias comprobaciones antes de publicar: su integración Git
 no espera el resultado de GitHub Actions. Si falla una prueba o la exportación,

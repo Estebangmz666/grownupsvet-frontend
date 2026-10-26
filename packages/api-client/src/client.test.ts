@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   apiRequest,
+  apiRequestRaw,
   ApiError,
   configureApiClient,
   StaleSessionRequestError,
@@ -37,6 +38,64 @@ afterAll(async () => {
 });
 
 describe("API client over actual local HTTP", () => {
+  it.each(["json", "raw"])(
+    "preserves Retry-After on a %s failure without retrying the login",
+    async (mode) => {
+      let requests = 0;
+      handler = (_request, response) => {
+        requests++;
+        response.writeHead(429, {
+          "content-type": "application/problem+json",
+          "retry-after": "65",
+          "cache-control": "no-store",
+        });
+        response.end(JSON.stringify({ errorCode: "LOGIN_RATE_LIMITED" }));
+      };
+      const unauthorized = vi.fn();
+      configureApiClient({ baseUrl, onUnauthorized: unauthorized });
+      const request = mode === "raw" ? apiRequestRaw : apiRequest;
+      await expect(
+        request("/auth/sessions", {
+          method: "POST",
+          body: JSON.stringify({
+            email: "fictional@example.test",
+            password: "fictional-password",
+          }),
+        }),
+      ).rejects.toMatchObject({
+        status: 429,
+        errorCode: "LOGIN_RATE_LIMITED",
+        retryAfterSeconds: 65,
+      });
+      expect(requests).toBe(1);
+      expect(unauthorized).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    ["Mon, 26 Oct 2026 15:01:05 GMT", 65],
+    ["Mon, 26 Oct 2026 14:59:00 GMT", 0],
+    ["-1", undefined],
+    ["1.5", undefined],
+    ["999999999999999999999999999", undefined],
+    ["not-a-delay", undefined],
+  ])(
+    "interprets the Retry-After header safely: %s",
+    async (retryAfter, expected) => {
+      handler = (_request, response) => {
+        response.writeHead(429, {
+          "content-type": "application/problem+json",
+          date: "Mon, 26 Oct 2026 15:00:00 GMT",
+          "retry-after": retryAfter,
+        });
+        response.end(JSON.stringify({ errorCode: "LOGIN_RATE_LIMITED" }));
+      };
+      configureApiClient({ baseUrl });
+      await expect(apiRequest("/auth/sessions")).rejects.toMatchObject({
+        status: 429,
+        retryAfterSeconds: expected,
+      });
+    },
+  );
   it.each([200, 401])(
     "discards an old %s response before it can affect the new account",
     async (status) => {

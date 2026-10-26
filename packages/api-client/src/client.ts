@@ -20,6 +20,10 @@ export interface ApiRequestOptions {
   allowStaleResponse?: boolean;
 }
 
+export interface ApiErrorResponseMetadata {
+  retryAfterSeconds?: number;
+}
+
 export class StaleSessionRequestError extends Error {
   constructor() {
     super("La solicitud pertenece a una sesión anterior.");
@@ -31,16 +35,19 @@ export class ApiError extends Error {
   readonly status: number;
   readonly errorCode: string;
   readonly fieldErrors: FieldValidationError[];
+  readonly retryAfterSeconds: number | undefined;
 
   constructor(
     response: ApiErrorResponse,
     public readonly responseBody?: unknown,
+    metadata: ApiErrorResponseMetadata = {},
   ) {
     super(response.detail ?? response.title ?? "Error de la API");
     this.name = "ApiError";
     this.status = response.status;
     this.errorCode = response.errorCode || "UNKNOWN_ERROR";
     this.fieldErrors = response.fieldErrors;
+    this.retryAfterSeconds = metadata.retryAfterSeconds;
   }
 }
 
@@ -83,13 +90,32 @@ function isFieldValidationError(value: unknown): value is FieldValidationError {
   );
 }
 
-function createApiError(status: number, body: unknown): ApiError {
+function readRetryAfterSeconds(response: Response): number | undefined {
+  const value = response.headers.get("Retry-After")?.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isSafeInteger(seconds) ? seconds : undefined;
+  }
+  // Accept an HTTP date, without treating malformed numeric delays as dates.
+  if (
+    !/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)
+  )
+    return undefined;
+  const retryAt = Date.parse(value);
+  if (!Number.isFinite(retryAt)) return undefined;
+  const serverDate = Date.parse(response.headers.get("Date") ?? "");
+  const referenceTime = Number.isFinite(serverDate) ? serverDate : Date.now();
+  return Math.max(0, Math.ceil((retryAt - referenceTime) / 1000));
+}
+
+function createApiError(httpResponse: Response, body: unknown): ApiError {
   const fieldErrors =
     isRecord(body) && Array.isArray(body.fieldErrors)
       ? body.fieldErrors.filter(isFieldValidationError)
       : [];
   const response: ApiErrorResponse = {
-    status,
+    status: httpResponse.status,
     errorCode:
       isRecord(body) && typeof body.errorCode === "string"
         ? body.errorCode
@@ -100,7 +126,9 @@ function createApiError(status: number, body: unknown): ApiError {
     if (typeof body.title === "string") response.title = body.title;
     if (typeof body.detail === "string") response.detail = body.detail;
   }
-  return new ApiError(response, body);
+  return new ApiError(response, body, {
+    retryAfterSeconds: readRetryAfterSeconds(httpResponse),
+  });
 }
 
 function combineSignals(signals: (AbortSignal | null | undefined)[]): {
@@ -230,7 +258,7 @@ export async function apiRequestRaw(
     if (!response.ok) {
       const body = await readBody(response);
       assertCurrent();
-      throw createApiError(response.status, body);
+      throw createApiError(response, body);
     }
     assertCurrent();
     return response;
@@ -261,7 +289,7 @@ export async function apiRequest<T>(
     }
     const body = await readBody(response);
     assertCurrent();
-    if (!response.ok) throw createApiError(response.status, body);
+    if (!response.ok) throw createApiError(response, body);
     assertCurrent();
     if (body === undefined) {
       throw new ApiError({
