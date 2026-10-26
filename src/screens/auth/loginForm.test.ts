@@ -104,4 +104,49 @@ describe("accessible login form contract", () => {
       "Revisa tu conexión",
     );
   });
+
+  it.each([
+    [1, "1 segundo"],
+    [60, "1 minuto"],
+    [65, "1 minuto y 5 segundos"],
+    [120, "2 minutos"],
+  ])(
+    "explains the server wait of %s seconds in Spanish",
+    (seconds, duration) => {
+      const failure = loginFailure(
+        new ApiError(
+          {
+            status: 429,
+            errorCode: "LOGIN_RATE_LIMITED",
+            detail: "unsafe account or peer detail",
+            fieldErrors: [],
+          },
+          undefined,
+          { retryAfterSeconds: seconds },
+        ),
+      );
+      expect(failure.message).toContain(`Espera al menos ${duration}`);
+      expect(failure.message).toContain(
+        "Conservamos el correo y la contraseña",
+      );
+      expect(failure.message).not.toContain("unsafe");
+      expect(failure.fields).toEqual({});
+    },
+  );
+
+  it.each([undefined, 0, -1, 1.5, Number.POSITIVE_INFINITY])(
+    "uses safe general guidance when Retry-After is unavailable or invalid: %s",
+    (seconds) => {
+      const failure = loginFailure(
+        new ApiError(
+          { status: 429, errorCode: "LOGIN_RATE_LIMITED", fieldErrors: [] },
+          undefined,
+          { retryAfterSeconds: seconds },
+        ),
+      );
+      expect(failure.message).toContain("Espera un momento");
+      expect(failure.message).not.toContain("NaN");
+      expect(failure.fields).toEqual({});
+    },
+  );
 });
