@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StaffButton } from "./components/StaffComponents";
+import { StaffConfirmationDialog } from "./components/StaffManagementComponents";
+import type { ClinicalExitState } from "@application/clinical/ClinicalEncounterScreen";
 import { AssignedAppointmentsScreen } from "./screens/AssignedAppointmentsScreen";
 import { StaffAccountsScreen } from "./screens/StaffAccountsScreen";
 import { AdministrativeAppointmentsScreen } from "./screens/AdministrativeAppointmentsScreen";
@@ -89,6 +91,9 @@ function AdministratorPanels({
 }
 
 function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
+  const [clinicalExitState, setClinicalExitState] =
+    useState<ClinicalExitState | null>(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const role = isStaffRole(user.role) ? user.role : null;
   const allowed = role !== null && canAccessStaffArea(user);
   return (
@@ -110,7 +115,13 @@ function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
             </View>
             <StaffButton
               label="Cerrar sesión"
+              disabled={clinicalExitState?.pending}
               onPress={() => {
+                if (clinicalExitState?.pending) return;
+                if (clinicalExitState?.requiresConfirmation) {
+                  setConfirmLogout(true);
+                  return;
+                }
                 void onLogout();
               }}
             />
@@ -139,6 +150,7 @@ function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
           </StaffMutationActivityProvider>
         ) : (
           <AssignedAppointmentsScreen
+            onClinicalExitStateChange={setClinicalExitState}
             initialDay={
               initialData?.role === "VETERINARIAN" ? initialData.day : undefined
             }
@@ -149,6 +161,19 @@ function StaffAreaContent({ user, initialData, onLogout }: StaffAreaProps) {
             }
           />
         )}
+        {confirmLogout ? (
+          <StaffConfirmationDialog
+            title="Cerrar sesión"
+            message="Se perderán los cambios sin guardar. Si un envío quedó sin confirmar, cerrar sesión no revierte un cambio que el servidor ya aplicó."
+            confirmLabel="Descartar y cerrar sesión"
+            onCancel={() => setConfirmLogout(false)}
+            onConfirm={() => {
+              if (clinicalExitState?.pending) return;
+              setConfirmLogout(false);
+              void onLogout();
+            }}
+          />
+        ) : null}
       </ScrollView>
     </View>
   );

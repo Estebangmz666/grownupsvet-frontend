@@ -18,6 +18,8 @@ export interface ApiRequestOptions {
   anonymous?: boolean;
   /** Used only to revoke the captured previous session after local logout. */
   allowStaleResponse?: boolean;
+  /** Precision-sensitive contracts can preserve numeric lexemes on successful JSON. */
+  parseResponseJson?: (text: string) => unknown;
 }
 
 export interface ApiErrorResponseMetadata {
@@ -229,13 +231,16 @@ async function sendRequest(
   }
 }
 
-async function readBody(response: Response): Promise<unknown> {
+async function readBody(
+  response: Response,
+  parseJson = JSON.parse,
+): Promise<unknown> {
   const responseText = await response.text();
   if (!responseText) return undefined;
 
   let body: unknown;
   try {
-    body = JSON.parse(responseText) as unknown;
+    body = parseJson(responseText) as unknown;
   } catch {
     body = responseText;
   }
@@ -287,7 +292,10 @@ export async function apiRequest<T>(
       assertCurrent();
       return undefined as T;
     }
-    const body = await readBody(response);
+    const body = await readBody(
+      response,
+      response.ok ? options.parseResponseJson : undefined,
+    );
     assertCurrent();
     if (!response.ok) throw createApiError(response, body);
     assertCurrent();

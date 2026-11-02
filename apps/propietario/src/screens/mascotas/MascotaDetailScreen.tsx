@@ -166,6 +166,21 @@ export function MascotaDetailScreen({
         </Text>
       </Pressable>
 
+      {hasUserPermission(user, "CLINICAL_HISTORY_READ_SELF") ? (
+        <Pressable
+          onPress={() =>
+            navigation.navigate("ClinicalHistory", {
+              petId: pet.id,
+              petName: pet.name,
+            })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Ver historia clínica de ${pet.name}`}
+          style={s.primaryButton}
+        >
+          <Text style={s.primaryButtonLabel}>Ver historia clínica</Text>
+        </Pressable>
+      ) : null}
       {canUpdatePet ? (
         <>
           <Pressable
