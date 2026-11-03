@@ -1,3 +1,9 @@
+import {
+  ClinicalEncounterScreen,
+  type ClinicalExitState,
+} from "@application/clinical/ClinicalEncounterScreen";
+import { clinicalPermissions } from "@application/clinical/clinicalPresentation";
+import { useAuthentication } from "@grownupsvet/authentication";
 import React, { useCallback, useState } from "react";
 import { Text, useWindowDimensions, View } from "react-native";
 import {
@@ -32,10 +38,16 @@ import { staffStyles as styles } from "../staffStyles";
 export function AssignedAppointmentsScreen({
   initialDay,
   initialPage,
+  onClinicalExitStateChange,
 }: {
   initialDay?: string;
   initialPage?: Page<Appointment>;
+  onClinicalExitStateChange: (state: ClinicalExitState | null) => void;
 }) {
+  const { user } = useAuthentication();
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<
+    string | null
+  >(null);
   const [query, setQuery] = useState(() => ({
     day: initialDay ?? bogotaToday(),
     page: 0,
@@ -51,6 +63,18 @@ export function AssignedAppointmentsScreen({
   );
   const result = useStaffPage(`${query.day}:${query.page}`, load, initialPage);
   const selectDay = (day: string) => setQuery({ day, page: 0 });
+  if (selectedAppointmentId)
+    return (
+      <ClinicalEncounterScreen
+        key={selectedAppointmentId}
+        appointmentId={selectedAppointmentId}
+        onExitStateChange={onClinicalExitStateChange}
+        onBack={() => {
+          setSelectedAppointmentId(null);
+          result.retry();
+        }}
+      />
+    );
   return (
     <View style={styles.section}>
       <Text style={styles.description} accessibilityLiveRegion="polite">
@@ -102,6 +126,22 @@ export function AssignedAppointmentsScreen({
                 {appointment.petName}
               </Text>
               <StaffStatus label={appointmentStatusLabel(appointment.status)} />
+              <StaffField
+                label="Propietario"
+                value={appointment.ownerFullName}
+              />
+              <StaffField
+                label="Motivo de la cita"
+                value={appointment.reason}
+              />
+              {clinicalPermissions(user).canManage &&
+              (appointment.status === "CONFIRMED" ||
+                appointment.status === "COMPLETED") ? (
+                <StaffButton
+                  label={`Abrir atención clínica de ${appointment.petName}`}
+                  onPress={() => setSelectedAppointmentId(appointment.id)}
+                />
+              ) : null}
               <StaffField
                 label="Hora de Bogotá"
                 value={`${formatAgendaTime(appointment.startsAt)} – ${formatAgendaTime(appointment.endsAt)}`}

@@ -1,3 +1,4 @@
+import { OwnerClinicalHistoryScreen } from "../screens/mascotas/OwnerClinicalHistoryScreen";
 import React from "react";
 import {
   createNativeStackNavigator,
@@ -11,6 +12,7 @@ import { OwnerPermissionBoundary } from "@application/components/OwnerPermission
 export type MascotasStackParamList = {
   MascotasList: undefined;
   MascotaDetail: { petId: string };
+  ClinicalHistory: { petId: string; petName: string };
   MascotaForm: { mode: "create" } | { mode: "edit"; petId: string };
 };
 
@@ -34,6 +36,13 @@ export function MascotasStack() {
         {(props) => (
           <OwnerPermissionBoundary permission="PET_READ_SELF">
             <MascotaDetailScreen {...props} />
+          </OwnerPermissionBoundary>
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="ClinicalHistory">
+        {(props) => (
+          <OwnerPermissionBoundary permission="CLINICAL_HISTORY_READ_SELF">
+            <OwnerClinicalHistoryScreen {...props} />
           </OwnerPermissionBoundary>
         )}
       </Stack.Screen>
