@@ -196,7 +196,7 @@ describe("registration response guidance", () => {
         ],
       }),
     );
-    expect(failure.fields.phoneNumber).toContain("internacional válido");
+    expect(failure.fields.phoneNumber).toContain("país");
     expect(failure.fields.password).toContain("menos común");
     expect(Object.keys(failure.fields)).toEqual(["phoneNumber", "password"]);
     expect(JSON.stringify(failure)).not.toContain("arbitrary upstream data");

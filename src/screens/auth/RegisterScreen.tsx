@@ -29,6 +29,11 @@ import {
   type RegistrationFormValues,
 } from "./registrationForm";
 
+import {
+  RegistrationBirthDateField,
+  RegistrationPhoneField,
+} from "./RegistrationContactFields";
+
 export function RegisterScreen({
   navigation,
 }: AuthenticationScreenProps<"Register">) {
@@ -167,6 +172,12 @@ export function RegisterScreen({
           kind={completed ? "success" : "error"}
         />
       ) : null}
+      <AuthenticationActionButton
+        label="Consultar tratamiento de datos personales"
+        kind="link"
+        disabled={submitting}
+        onPress={() => navigation.navigate("PrivacyNotice")}
+      />
       {completed ? (
         <AuthenticationActionButton
           label="Ir a iniciar sesión"
@@ -209,35 +220,20 @@ export function RegisterScreen({
             returnKeyType="next"
             onSubmitEditing={() => dateOfBirthField.current?.focus()}
           />
-          <AuthenticationTextField
+          <RegistrationBirthDateField
             ref={dateOfBirthField}
             id={`${formId}-dateOfBirth`}
-            label="Fecha de nacimiento"
-            helperText="Formato AAAA-MM-DD: año, mes y día. Por ejemplo, 1958-07-04."
             error={fieldErrors.dateOfBirth}
-            value={values.dateOfBirth}
-            onChangeText={(value) => updateField("dateOfBirth", value)}
-            autoComplete="birthdate-full"
-            textContentType="birthdate"
-            autoCorrect={false}
-            keyboardType="numbers-and-punctuation"
-            editable={!submitting}
-            returnKeyType="next"
+            disabled={submitting}
+            onChange={(value) => updateField("dateOfBirth", value)}
             onSubmitEditing={() => phoneNumberField.current?.focus()}
           />
-          <AuthenticationTextField
+          <RegistrationPhoneField
             ref={phoneNumberField}
             id={`${formId}-phoneNumber`}
-            label="Número de teléfono"
-            helperText="Incluye + y el código de país, sin espacios. Por ejemplo, +573001234567."
             error={fieldErrors.phoneNumber}
-            value={values.phoneNumber}
-            onChangeText={(value) => updateField("phoneNumber", value)}
-            autoComplete="tel"
-            textContentType="telephoneNumber"
-            keyboardType="phone-pad"
-            editable={!submitting}
-            returnKeyType="next"
+            disabled={submitting}
+            onChange={(value) => updateField("phoneNumber", value)}
             onSubmitEditing={() => passwordField.current?.focus()}
           />
           <AuthenticationTextField

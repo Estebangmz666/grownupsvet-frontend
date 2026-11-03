@@ -24,9 +24,9 @@ const fieldGuidance: Record<RegistrationField, string> = {
   email:
     "Escribe un correo válido de hasta 254 caracteres, por ejemplo nombre@correo.com.",
   dateOfBirth:
-    "Escribe una fecha real en formato AAAA-MM-DD, no futura y con una edad de hasta 130 años.",
+    "Escribe una fecha real en formato DD/MM/AAAA, no futura y con una edad de hasta 130 años.",
   phoneNumber:
-    "Escribe un teléfono internacional válido, con + y código de país, sin espacios ni extensiones.",
+    "Revisa el país y escribe un número de teléfono válido para ese prefijo, sin extensiones.",
   password:
     "Usa entre 15 y 128 caracteres; puedes elegir una frase larga con espacios.",
   confirmPassword: "Las dos contraseñas deben coincidir exactamente.",

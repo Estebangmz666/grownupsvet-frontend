@@ -7,10 +7,12 @@ import { RegisterScreen } from "../screens/auth/RegisterScreen";
 import { ForgotPasswordRequestScreen } from "../screens/auth/ForgotPasswordRequestScreen";
 import { ForgotPasswordVerifyScreen } from "../screens/auth/ForgotPasswordVerifyScreen";
 import { ForgotPasswordResetScreen } from "../screens/auth/ForgotPasswordResetScreen";
+import { PrivacyNoticeScreen } from "../screens/auth/PrivacyNoticeScreen";
 
 export type AuthenticationStackParamList = {
   Login: undefined;
   Register: undefined;
+  PrivacyNotice: undefined;
   ForgotPasswordRequest: undefined;
   ForgotPasswordVerify: { email: string };
   ForgotPasswordReset: { resetToken: string; expiresAt?: number };
@@ -25,6 +27,7 @@ export function AuthenticationNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Register" component={RegisterScreen} />
+      <Stack.Screen name="PrivacyNotice" component={PrivacyNoticeScreen} />
       <Stack.Screen
         name="ForgotPasswordRequest"
         component={ForgotPasswordRequestScreen}
