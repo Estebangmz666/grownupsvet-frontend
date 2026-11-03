@@ -1,5 +1,7 @@
 # GrownupsVet frontend
 
+**Guía de uso:** [Manual de usuario de GrownupsVet (PDF)](00-manual-de-usuario.pdf).
+
 Sitio publicado: [grownupsvet-frontend.pages.dev](https://grownupsvet-frontend.pages.dev).
 La [verificación de publicación](docs/publicacion-cloudflare-2026-10-23.md)
 identifica el commit, el despliegue y los límites de las comprobaciones reales.
