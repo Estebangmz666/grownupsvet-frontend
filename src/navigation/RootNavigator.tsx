@@ -19,6 +19,7 @@ import { useStaffAccountActivationLink } from "./useStaffAccountActivationLink";
 const authenticationTitles: Record<string, string> = {
   Login: "Iniciar sesión",
   Register: "Crear cuenta",
+  PrivacyNotice: "Tratamiento de datos personales",
   ForgotPasswordRequest: "Recupera tu contraseña",
   ForgotPasswordVerify: "Ingresa el código",
   ForgotPasswordReset: "Crea tu nueva contraseña",

@@ -213,6 +213,12 @@ export function LoginScreen({
           }}
         />
       </AuthenticationFormFooter>
+      <AuthenticationActionButton
+        label="Tratamiento de datos personales"
+        kind="link"
+        disabled={submitting}
+        onPress={() => navigation.navigate("PrivacyNotice")}
+      />
     </AuthenticationFormLayout>
   );
 }
