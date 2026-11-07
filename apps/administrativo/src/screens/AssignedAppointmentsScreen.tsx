@@ -5,11 +5,16 @@ import {
 import { clinicalPermissions } from "@application/clinical/clinicalPresentation";
 import { useAuthentication } from "@grownupsvet/authentication";
 import React, { useCallback, useState } from "react";
-import { Text, useWindowDimensions, View } from "react-native";
+import { Platform, Text, useWindowDimensions, View } from "react-native";
 import {
   EmptyState,
   ErrorState,
   LoadingState,
+  colors,
+  radius,
+  spacing,
+  touchTarget,
+  typography,
 } from "@grownupsvet/accessibility-kit";
 import {
   addDaysToIsoDate,
@@ -80,6 +85,43 @@ export function AssignedAppointmentsScreen({
       <Text style={styles.description} accessibilityLiveRegion="polite">
         {formatAgendaDay(query.day)} · Hora de Bogotá
       </Text>
+      {Platform.OS === "web" ? (
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: spacing.xs,
+            fontSize: typography.body,
+            color: colors.text,
+          }}
+        >
+          Fecha de la agenda
+          <input
+            type="date"
+            value={query.day}
+            onChange={({ currentTarget }) => {
+              if (
+                currentTarget.value.length === 10 &&
+                currentTarget.validity.valid
+              ) {
+                selectDay(currentTarget.value);
+              }
+            }}
+            style={{
+              boxSizing: "border-box",
+              maxWidth: "100%",
+              minHeight: touchTarget.comfortable,
+              paddingInline: spacing.sm,
+              border: `2px solid ${colors.border}`,
+              borderRadius: radius.sm,
+              backgroundColor: colors.surface,
+              color: colors.text,
+              font: "inherit",
+            }}
+          />
+        </label>
+      ) : null}
       <View style={styles.controls}>
         <StaffButton
           label="Día anterior"
