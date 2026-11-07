@@ -8,7 +8,11 @@ import {
   useReadAloud,
 } from "@grownupsvet/accessibility-kit";
 import type { CitasStackScreenProps } from "../../navigation/CitasStack";
-import { formatDateTime, getStatusLabel } from "./citaLabels";
+import {
+  appointmentStatusDescriptions,
+  formatDateTime,
+  getStatusLabel,
+} from "./citaLabels";
 import { toCitaErrorMessage } from "./citaErrorMessages";
 import { citaStyles as s, getStatusBadge } from "./citaStyles";
 
@@ -66,18 +70,18 @@ export function CitaDetailScreen({
   }
 
   const badge = getStatusBadge(appointment.status);
+  const statusDescription = appointmentStatusDescriptions[appointment.status];
   const isActive =
     appointment.status === "REQUESTED" || appointment.status === "CONFIRMED";
   const readAloudText = [
     `Cita para ${appointment.petName}.`,
     `Estado: ${getStatusLabel(appointment.status)}.`,
+    ...(statusDescription ? [statusDescription] : []),
     `Fecha y hora: ${formatDateTime(appointment.startsAt)}.`,
     `Veterinario: ${appointment.veterinarianFullName}.`,
     `Motivo: ${appointment.reason || "No especificado"}.`,
     ...(isActive
-      ? [
-          "Si necesitas cancelar o reprogramar esta cita, comunícate directamente con la clínica. Desde la aplicación todavía no es posible hacerlo.",
-        ]
+      ? ["Para cancelar o reprogramar esta cita, comunícate con la clínica."]
       : []),
   ].join(" ");
 
@@ -98,6 +102,9 @@ export function CitaDetailScreen({
           {getStatusLabel(appointment.status)}
         </Text>
       </View>
+      {statusDescription ? (
+        <Text style={s.helperText}>{statusDescription}</Text>
+      ) : null}
 
       <View style={s.card}>
         <View style={s.detailRow}>
@@ -146,8 +153,7 @@ export function CitaDetailScreen({
 
       {isActive ? (
         <Text style={s.helperText}>
-          Si necesitas cancelar o reprogramar esta cita, comunícate directamente
-          con la clínica — desde la app todavía no es posible hacerlo.
+          Para cancelar o reprogramar esta cita, comunícate con la clínica.
         </Text>
       ) : null}
     </ScrollView>
