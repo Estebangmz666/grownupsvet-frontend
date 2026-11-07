@@ -259,12 +259,6 @@ export function CitasListScreen({
             <EmptyState
               title="No tienes citas próximas"
               description="Cuando solicites una cita para tu mascota, aparecerá aquí."
-              actionLabel={canRequestAppointment ? "Solicitar cita" : undefined}
-              onAction={
-                canRequestAppointment
-                  ? () => navigation.navigate("SolicitarCita")
-                  : undefined
-              }
             />
           ) : (
             <EmptyState

@@ -35,7 +35,25 @@ jobs:
         run: npm ci
 
       - name: Verificar tipos, lint y pruebas
-        run: npm run check
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run test:coverage
+
+      - name: Auditar dependencias de producción
+        continue-on-error: true
+        run: npm audit --omit=dev --json > npm-audit.json
+
+      - name: Conservar informes de calidad
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-quality
+          path: |
+            coverage/
+            npm-audit.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Empaquetar la vista web
         run: npm run web:build
