@@ -38,13 +38,17 @@ export function isValidDateOfBirth(value: string): boolean {
     return false;
   }
 
+  return value >= "0001-01-01" && value <= getMaximumPetDateOfBirth();
+}
+
+export function getMaximumPetDateOfBirth(now: Date = new Date()): string {
   const todayInBogota = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Bogota",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   })
-    .formatToParts(new Date())
+    .formatToParts(now)
     .reduce<DateParts>(
       (dateParts, part) => {
         if (
@@ -58,7 +62,5 @@ export function isValidDateOfBirth(value: string): boolean {
       },
       { year: "", month: "", day: "" },
     );
-  const today = `${todayInBogota.year}-${todayInBogota.month}-${todayInBogota.day}`;
-
-  return value <= today;
+  return `${todayInBogota.year}-${todayInBogota.month}-${todayInBogota.day}`;
 }

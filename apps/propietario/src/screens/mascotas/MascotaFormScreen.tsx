@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, {
+  createElement,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -16,9 +22,22 @@ import {
   type Sex,
   type Species,
 } from "@grownupsvet/api-client";
-import { ErrorState, LoadingState } from "@grownupsvet/accessibility-kit";
+import {
+  colors,
+  ErrorState,
+  LoadingState,
+  radius,
+  spacing,
+  touchTarget,
+  typography,
+} from "@grownupsvet/accessibility-kit";
 import type { MascotasStackScreenProps } from "../../navigation/MascotasStack";
-import { isValidDateOfBirth, sexLabels, speciesLabels } from "./petLabels";
+import {
+  getMaximumPetDateOfBirth,
+  isValidDateOfBirth,
+  sexLabels,
+  speciesLabels,
+} from "./petLabels";
 import { toPetErrorMessage } from "./petErrorMessages";
 import { petStyles as s } from "./petStyles";
 
@@ -30,6 +49,7 @@ export function MascotaFormScreen({
   route,
 }: MascotasStackScreenProps<"MascotaForm">) {
   const isEdit = route.params.mode === "edit";
+  const dateOfBirthId = useId();
 
   const [loadingExisting, setLoadingExisting] = useState(isEdit);
   const [name, setName] = useState("");
@@ -84,7 +104,7 @@ export function MascotaFormScreen({
     const trimmedDate = dateOfBirth.trim();
     if (trimmedDate && !isValidDateOfBirth(trimmedDate)) {
       setErrorMessage(
-        "La fecha de nacimiento debe tener el formato AAAA-MM-DD y no ser futura.",
+        "Elige una fecha de nacimiento válida que no esté en el futuro.",
       );
       return;
     }
@@ -269,20 +289,63 @@ export function MascotaFormScreen({
         </View>
 
         <View style={s.field}>
-          <Text style={s.label}>Fecha de nacimiento (opcional)</Text>
-          <TextInput
-            value={dateOfBirth}
-            onChangeText={setDateOfBirth}
-            placeholder="AAAA-MM-DD"
-            style={s.input}
-            keyboardType="number-pad"
-            maxLength={10}
-            accessibilityLabel="Fecha de nacimiento, formato AAAA-MM-DD (opcional)"
-          />
-          <Text style={s.helperText}>
-            Formato AAAA-MM-DD, por ejemplo 2020-05-15. Déjalo vacío si no la
-            sabes.
+          <Text nativeID={`${dateOfBirthId}-label`} style={s.label}>
+            Fecha de nacimiento (opcional)
           </Text>
+          {Platform.OS === "web" ? (
+            createElement("input", {
+              id: dateOfBirthId,
+              type: "date",
+              value: dateOfBirth,
+              min: "0001-01-01",
+              max: getMaximumPetDateOfBirth(),
+              "aria-labelledby": `${dateOfBirthId}-label`,
+              "aria-describedby": `${dateOfBirthId}-help`,
+              onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+                setDateOfBirth(event.target.value),
+              style: {
+                boxSizing: "border-box",
+                width: "100%",
+                minWidth: 0,
+                minHeight: touchTarget.comfortable,
+                padding: spacing.md,
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.md,
+                fontFamily: "system-ui, sans-serif",
+                fontSize: typography.body,
+                color: colors.text,
+                backgroundColor: colors.surface,
+              },
+            })
+          ) : (
+            <TextInput
+              value={dateOfBirth}
+              onChangeText={setDateOfBirth}
+              placeholder="AAAA-MM-DD"
+              style={s.input}
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+              accessibilityLabel="Fecha de nacimiento, formato AAAA-MM-DD (opcional)"
+            />
+          )}
+          <Text nativeID={`${dateOfBirthId}-help`} style={s.helperText}>
+            {Platform.OS === "web"
+              ? "Selecciona la fecha de nacimiento. Déjala vacía si no la sabes."
+              : "Formato AAAA-MM-DD, por ejemplo 2020-05-15. Déjalo vacío si no la sabes."}
+          </Text>
+          {dateOfBirth ? (
+            <Pressable
+              onPress={() => {
+                setDateOfBirth("");
+                setDateOfBirthEstimated(false);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Quitar fecha de nacimiento"
+              style={s.backButton}
+            >
+              <Text style={s.backLabel}>Quitar fecha</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         {dateOfBirth.trim() ? (

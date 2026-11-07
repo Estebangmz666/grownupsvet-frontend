@@ -35,6 +35,8 @@ import {
   emptyAppointmentPetPage,
 } from "./appointmentPetPages";
 import { appointmentReasonError } from "./appointmentReason";
+import { AvailabilityCalendar } from "./AvailabilityCalendar";
+import { groupAppointmentSlotsByDate } from "./appointmentCalendar";
 
 const APPOINTMENT_HORIZON_DAYS = 60;
 
@@ -66,6 +68,7 @@ export function SolicitarCitaScreen({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -86,6 +89,7 @@ export function SolicitarCitaScreen({
     setLoadState("loading");
     setErrorMessage(null);
     setSelectedSlotId(null);
+    setSelectedDate(null);
     setSelectedPetId(null);
     setConfirmVisible(false);
     try {
@@ -100,6 +104,10 @@ export function SolicitarCitaScreen({
         return;
       }
 
+      if (petsPage.totalElements === 1 && petsPage.items.length === 1) {
+        setSelectedPetId(petsPage.items[0].id);
+      }
+
       const today = new Date();
       const from = bogotaDateWithOffset(today, 1);
       const to = bogotaDateWithOffset(today, APPOINTMENT_HORIZON_DAYS);
@@ -110,12 +118,7 @@ export function SolicitarCitaScreen({
       );
       if (!isCurrent()) return;
 
-      setSlots(
-        availableSlots.sort(
-          (a, b) =>
-            new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-        ),
-      );
+      setSlots(availableSlots);
       setLoadState("ready");
     } catch (error) {
       if (!isCurrent()) return;
@@ -140,7 +143,22 @@ export function SolicitarCitaScreen({
   );
 
   const selectedPet = pets.find((pet) => pet.id === selectedPetId) ?? null;
-  const selectedSlot = slots.find((slot) => slot.id === selectedSlotId) ?? null;
+  const availableDays = useMemo(
+    () => groupAppointmentSlotsByDate(slots),
+    [slots],
+  );
+  const selectedDay = availableDays.find((day) => day.date === selectedDate);
+  const selectedSlot =
+    selectedDay?.slots.find((slot) => slot.id === selectedSlotId) ?? null;
+
+  const handleSelectDate = (date: string | null) => {
+    if (date === selectedDate) return;
+    clientRequestIdRef.current = null;
+    setSelectedDate(date);
+    setSelectedSlotId(null);
+    setConfirmVisible(false);
+    setSubmitError(null);
+  };
 
   const handleGoToMascotas = () => {
     navigation
@@ -244,8 +262,6 @@ export function SolicitarCitaScreen({
     );
   }
 
-  let lastHeader = "";
-
   return (
     <KeyboardAvoidingView
       style={s.flex}
@@ -286,6 +302,7 @@ export function SolicitarCitaScreen({
             accessibilityRole="button"
             accessibilityLabel={`Mascota: ${pet.name}`}
             accessibilityState={{ selected: selectedPetId === pet.id }}
+            aria-pressed={selectedPetId === pet.id}
             style={[
               s.selectableRow,
               selectedPetId === pet.id && s.selectableRowActive,
@@ -328,47 +345,62 @@ export function SolicitarCitaScreen({
           Mostrando {pets.length} de {petPage.totalElements} mascotas activas.
         </Text>
 
-        <Text style={s.sectionLabel}>¿Qué turno prefieres?</Text>
+        <Text style={s.sectionLabel}>¿Qué día prefieres?</Text>
         {slots.length === 0 ? (
           <Text style={s.helperText}>
             No hay turnos disponibles entre mañana y los próximos{" "}
             {APPOINTMENT_HORIZON_DAYS} días. Intenta de nuevo más tarde.
           </Text>
         ) : (
-          slots.map((slot) => {
-            const header = formatDateHeader(slot.startsAt);
-            const showHeader = header !== lastHeader;
-            lastHeader = header;
-            return (
-              <React.Fragment key={slot.id}>
-                {showHeader ? (
-                  <Text style={s.dateGroupHeader}>{header}</Text>
-                ) : null}
-                <Pressable
-                  onPress={() => {
-                    clientRequestIdRef.current = null;
-                    setSelectedSlotId(slot.id);
-                    setSubmitError(null);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Turno ${formatTimeRange(slot.startsAt, slot.endsAt)} con ${slot.veterinarianFullName}`}
-                  accessibilityState={{ selected: selectedSlotId === slot.id }}
-                  style={[
-                    s.selectableRow,
-                    selectedSlotId === slot.id && s.selectableRowActive,
-                  ]}
-                >
-                  <Text style={s.selectableRowTitle}>
-                    {formatTimeRange(slot.startsAt, slot.endsAt)}
-                  </Text>
-                  <Text style={s.selectableRowSubtitle}>
-                    Dr(a). {slot.veterinarianFullName}
-                  </Text>
-                </Pressable>
-              </React.Fragment>
-            );
-          })
+          <AvailabilityCalendar
+            availableDays={availableDays}
+            selectedDate={selectedDate}
+            onSelectDate={handleSelectDate}
+          />
         )}
+
+        {selectedDay ? (
+          <>
+            <Text style={s.sectionLabel}>
+              Horarios del {formatDateHeader(selectedDay.slots[0].startsAt)}
+            </Text>
+            <Text style={s.helperText} accessibilityLiveRegion="polite">
+              {selectedDay.slots.length}{" "}
+              {selectedDay.slots.length === 1
+                ? "turno disponible"
+                : "turnos disponibles"}
+              . Elige el horario que prefieras.
+            </Text>
+            {selectedDay.slots.map((slot) => (
+              <Pressable
+                key={slot.id}
+                onPress={() => {
+                  clientRequestIdRef.current = null;
+                  setSelectedSlotId(slot.id);
+                  setSubmitError(null);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Turno ${formatTimeRange(slot.startsAt, slot.endsAt)} con ${slot.veterinarianFullName}`}
+                accessibilityState={{ selected: selectedSlotId === slot.id }}
+                style={[
+                  s.selectableRow,
+                  selectedSlotId === slot.id && s.selectableRowActive,
+                ]}
+              >
+                <Text style={s.selectableRowTitle}>
+                  {formatTimeRange(slot.startsAt, slot.endsAt)}
+                </Text>
+                <Text style={s.selectableRowSubtitle}>
+                  Dr(a). {slot.veterinarianFullName}
+                </Text>
+              </Pressable>
+            ))}
+          </>
+        ) : slots.length > 0 ? (
+          <Text style={s.helperText} accessibilityLiveRegion="polite">
+            Elige un día del calendario para ver sus horarios.
+          </Text>
+        ) : null}
 
         <Text style={s.sectionLabel}>Motivo de la cita (obligatorio)</Text>
         <TextInput
