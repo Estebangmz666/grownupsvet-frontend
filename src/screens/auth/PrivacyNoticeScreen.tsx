@@ -6,6 +6,7 @@ import {
   AuthenticationFormLayout,
   AuthenticationFormText,
 } from "./AuthenticationFormComponents";
+import { privacyNoticeVersion } from "./registrationForm";
 
 const contactEmail = "esteban.gomezl@uqvirtual.edu.co";
 
@@ -23,7 +24,7 @@ export function PrivacyNoticeScreen({
   return (
     <AuthenticationFormLayout
       title="Tratamiento de datos personales"
-      description="Conoce qué información usa GrownupsVet y cómo consultar tus datos."
+      description={`Conoce qué información usa GrownupsVet y cómo consultar tus datos. Versión del aviso: ${privacyNoticeVersion}.`}
     >
       <View style={styles.section}>
         <Text accessibilityRole="header" aria-level={2} style={styles.heading}>

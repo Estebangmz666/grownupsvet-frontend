@@ -12,6 +12,7 @@ export interface RegisterInput {
   fullName: string;
   dateOfBirth: string;
   phoneNumber: string;
+  privacyNoticeVersion?: string;
 }
 
 export interface LoginResponse {

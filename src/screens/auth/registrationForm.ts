@@ -1,6 +1,11 @@
 import { ApiError, type RegisterInput } from "@grownupsvet/api-client";
 
-export interface RegistrationFormValues extends RegisterInput {
+export const privacyNoticeVersion = "2026-11-07";
+
+export interface RegistrationFormValues extends Omit<
+  RegisterInput,
+  "privacyNoticeVersion"
+> {
   confirmPassword: string;
 }
 
