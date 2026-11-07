@@ -1,5 +1,19 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { TextInput, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  colors,
+  radius,
+  spacing,
+  touchTarget,
+  typography,
+} from "@grownupsvet/accessibility-kit";
 import {
   getApiRequestContext,
   isApiRequestContextCurrent,
@@ -20,6 +34,7 @@ import {
   focusAuthenticationFeedback,
 } from "./authenticationFocus";
 import {
+  privacyNoticeVersion,
   registrationFailure,
   registrationFieldOrder,
   registrationRequest,
@@ -34,6 +49,9 @@ import {
   RegistrationPhoneField,
 } from "./RegistrationContactFields";
 
+const privacyAuthorizationLabel =
+  "Autorizo a Esteban Gómez León a tratar mis datos personales para las finalidades descritas en el aviso de tratamiento de datos.";
+
 export function RegisterScreen({
   navigation,
 }: AuthenticationScreenProps<"Register">) {
@@ -47,6 +65,7 @@ export function RegisterScreen({
     confirmPassword: "",
   });
   const [fieldErrors, setFieldErrors] = useState<RegistrationFieldErrors>({});
+  const [privacyAuthorized, setPrivacyAuthorized] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [uncertainOutcome, setUncertainOutcome] = useState(false);
@@ -120,6 +139,12 @@ export function RegisterScreen({
       showFeedback("Revisa los campos indicados antes de continuar.", errors);
       return;
     }
+    if (!privacyAuthorized) {
+      showFeedback(
+        "Para crear tu cuenta, revisa el aviso y autoriza el tratamiento de tus datos personales.",
+      );
+      return;
+    }
     const context = getApiRequestContext();
     const current = () =>
       mounted.current && isApiRequestContextCurrent(context);
@@ -127,7 +152,7 @@ export function RegisterScreen({
     setSubmitting(true);
     setFeedback(undefined);
     try {
-      await register(registrationRequest(values));
+      await register({ ...registrationRequest(values), privacyNoticeVersion });
       if (!current()) return;
       registrationBlocked.current = true;
       setValues((previous) => ({
@@ -270,6 +295,56 @@ export function RegisterScreen({
             returnKeyType="done"
             onSubmitEditing={() => void handleSubmit()}
           />
+          {Platform.OS === "web" ? (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: spacing.sm,
+                minHeight: touchTarget.comfortable,
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.sm,
+                padding: spacing.sm,
+                color: colors.text,
+                fontSize: typography.body,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={privacyAuthorized}
+                disabled={submitting}
+                onChange={({ currentTarget }) =>
+                  setPrivacyAuthorized(currentTarget.checked)
+                }
+                style={{
+                  accentColor: colors.accent,
+                  width: 22,
+                  height: 22,
+                  flexShrink: 0,
+                }}
+              />
+              {privacyAuthorizationLabel}
+            </label>
+          ) : (
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityLabel={privacyAuthorizationLabel}
+              accessibilityState={{
+                checked: privacyAuthorized,
+                disabled: submitting,
+              }}
+              disabled={submitting}
+              onPress={() => setPrivacyAuthorized((authorized) => !authorized)}
+              style={styles.authorization}
+            >
+              <Text aria-hidden style={styles.authorizationMark}>
+                {privacyAuthorized ? "☑" : "☐"}
+              </Text>
+              <Text style={styles.authorizationText}>
+                {privacyAuthorizationLabel}
+              </Text>
+            </Pressable>
+          )}
           {submitting ? (
             <AuthenticationFeedback
               id={`${formId}-submitting`}
@@ -304,3 +379,18 @@ export function RegisterScreen({
     </AuthenticationFormLayout>
   );
 }
+
+const styles = StyleSheet.create({
+  authorization: {
+    minHeight: touchTarget.comfortable,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    gap: spacing.sm,
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  authorizationMark: { color: colors.accent, fontSize: typography.heading },
+  authorizationText: { color: colors.text, fontSize: typography.body, flex: 1 },
+});
