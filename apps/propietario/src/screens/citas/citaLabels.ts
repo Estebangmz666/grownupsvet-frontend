@@ -9,6 +9,17 @@ export const appointmentStatusLabels: Record<AppointmentStatus, string> = {
   COMPLETED: "Completada",
 };
 
+export const appointmentStatusDescriptions: Record<AppointmentStatus, string> =
+  {
+    REQUESTED: "La clínica todavía está revisando tu solicitud.",
+    CONFIRMED: "La clínica reservó este horario para tu mascota.",
+    REJECTED:
+      "La clínica no pudo aprobar la solicitud. Puedes pedir otra cita.",
+    CANCELLED: "Esta cita se canceló. Puedes solicitar otro horario.",
+    NO_SHOW: "La clínica registró que no asististe a esta cita.",
+    COMPLETED: "La atención de esta cita ya terminó.",
+  };
+
 export function getStatusLabel(status: string): string {
   return (
     appointmentStatusLabels[status as AppointmentStatus] ??

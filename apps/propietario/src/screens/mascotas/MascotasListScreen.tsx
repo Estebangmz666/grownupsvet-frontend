@@ -123,14 +123,6 @@ export function MascotasListScreen({
               ? "Cuando archives una mascota, aparecerá aquí."
               : "Agrega tu primera mascota para empezar a solicitar citas."
           }
-          actionLabel={
-            showArchived || !canCreatePet ? undefined : "Agregar mascota"
-          }
-          onAction={
-            showArchived || !canCreatePet
-              ? undefined
-              : () => navigation.navigate("MascotaForm", { mode: "create" })
-          }
         />
       ) : (
         <FlatList
